@@ -1,14 +1,15 @@
 /**
  * FFmpeg process wrapper.
  *
- * Frames are piped in as raw RGBA over stdin rather than written to disk —
+ * Frames are piped in as raw pixels over stdin rather than written to disk —
  * on a 2-core laptop the disk round trip costs more than the encode does.
- * The encoder is picked once at startup: Intel Quick Sync where the hardware
- * has it, libx264 everywhere else.
+ * They arrive in the canvas's native byte order (see RAW_PIXEL_FORMAT), so
+ * ffmpeg does the channel swap instead of us paying for it per frame.
  */
 
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { RAW_PIXEL_FORMAT } from "./canvas";
 
 const execFileAsync = promisify(execFile);
 
@@ -109,7 +110,7 @@ export interface EncodeOptions {
 }
 
 export interface FrameSink {
-  /** Push one raw RGBA frame. Resolves when the pipe accepts more. */
+  /** Push one raw frame. Resolves when the pipe accepts more. */
   write(frame: Uint8Array): Promise<void>;
   /** Close stdin and wait for the file to be written. */
   finish(): Promise<void>;
@@ -178,7 +179,7 @@ function buildArgs(opts: EncodeOptions): string[] {
     "-y",
     // Raw video in on stdin.
     "-f", "rawvideo",
-    "-pix_fmt", "rgba",
+    "-pix_fmt", RAW_PIXEL_FORMAT,
     "-s", `${opts.width}x${opts.height}`,
     "-r", String(opts.fps),
     "-i", "pipe:0",

@@ -11,13 +11,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { createCanvas } from "@napi-rs/canvas";
 import { NextResponse } from "next/server";
 import { drawFrame, prepareFrameContext } from "@/engine/compositor";
 import { estimateReuse } from "@/engine/framekey";
-import { layout, outputSize } from "@/engine/layout";
+import { drawnPageWidth, layout, outputSize } from "@/engine/layout";
 import { predictSeconds } from "@/engine/estimate";
 import { DEFAULT_SETTINGS, type DrawablePage, type Settings } from "@/engine/types";
+import { createCanvas } from "@/server/canvas";
 import { detectEncoder } from "@/server/ffmpeg";
 import { rasterizePdf, releasePages } from "@/server/raster";
 
@@ -64,18 +64,18 @@ export async function POST(request: Request) {
     entry = cache.get(key);
 
     // Re-rasterize when the output got bigger, or the pages would be soft.
-    if (!entry || entry.outputWidth < out.width) {
+    if (!entry || entry.outputWidth < drawnPageWidth(settings)) {
       if (entry) releasePages(entry.pages);
       const result = await rasterizePdf({
         data: bytes,
         pageFrom: settings.pageFrom,
         pageTo: settings.pageTo,
-        outputWidth: out.width,
+        outputWidth: drawnPageWidth(settings),
       });
       entry = {
         pages: result.pages,
         documentPages: result.documentPages,
-        outputWidth: out.width,
+        outputWidth: drawnPageWidth(settings),
         touchedAt: Date.now(),
       };
       cache.set(key, entry);

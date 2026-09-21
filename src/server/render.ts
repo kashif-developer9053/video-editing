@@ -7,13 +7,14 @@
  * encoder the same buffer again instead of repainting it.
  */
 
-import { createCanvas } from "@napi-rs/canvas";
 import { drawFrame, prepareFrameContext } from "@/engine/compositor";
 import { RenderEstimator } from "@/engine/estimate";
 import { frameKey } from "@/engine/framekey";
-import { layout, outputSize } from "@/engine/layout";
+import { drawnPageWidth, layout, outputSize } from "@/engine/layout";
 import type { JobProgress, Settings } from "@/engine/types";
+import { createCanvas, frameBytes, isTightlyPacked } from "./canvas";
 import { encoderFor, startEncoder } from "./ffmpeg";
+import { prescalePages } from "./prescale";
 import { rasterizePdf, releasePages } from "./raster";
 
 export interface RenderInput {
@@ -59,7 +60,7 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
     data: input.pdf,
     pageFrom: settings.pageFrom,
     pageTo: settings.pageTo,
-    outputWidth: out.width,
+    outputWidth: drawnPageWidth(settings),
     signal,
     onProgress: (done, total) => {
       report({
@@ -74,6 +75,10 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
     throw new Error("The selected page range produced no pages.");
   }
 
+  // Resample each page once to the size it will be drawn at, so the frame
+  // loop is blitting rather than rescaling. Worth roughly 3x on a render.
+  prescalePages(pages, settings);
+
   try {
     /* ---- 2. set up compositing ---- */
     const layoutResult = layout(pages, settings);
@@ -81,6 +86,12 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
 
     const canvas = createCanvas(out.width, out.height);
     const ctx = canvas.getContext("2d");
+
+    // Row padding would shear every frame, since ffmpeg assumes tightly
+    // packed rows. Output widths are forced even, so this should never fire.
+    if (!isTightlyPacked(canvas)) {
+      throw new Error(`Canvas stride ${canvas.stride} does not match width ${out.width}`);
+    }
 
     const totalFrames = Math.max(1, Math.round(settings.duration * settings.fps));
     const encoder = await encoderFor(out.width, out.height);
@@ -117,9 +128,10 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
 
         if (key !== lastKey || lastBuffer === null) {
           drawFrame(ctx, time, fc);
-          // Copy out of the canvas: the next draw would otherwise mutate
-          // the buffer we are about to reuse.
-          lastBuffer = Buffer.from(canvas.data());
+          // frameBytes hands back the canvas's own memory, so it has to be
+          // copied: the next draw would otherwise rewrite the buffer this
+          // cache is holding for reuse.
+          lastBuffer = Buffer.from(frameBytes(canvas));
           lastKey = key;
           uniqueFrames++;
         }

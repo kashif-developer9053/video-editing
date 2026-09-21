@@ -1,19 +1,32 @@
 /**
  * PDF to page bitmaps, server side.
  *
- * pdfjs-dist runs under Node with a canvas shim. Pages are rasterized at the
- * size the output actually needs rather than a fixed large width — on a
- * 2-core laptop with 8GB, rasterizing 50 pages at 2560px is the step most
- * likely to run the machine out of memory.
+ * Rendering goes through node-canvas (see ./canvas.ts for why the whole
+ * server uses one canvas library).
+ *
+ * Pages are rasterized at the size the output actually needs rather than a
+ * fixed large width — on a 2-core laptop with 8GB, rasterizing 50 pages at
+ * 2560px is the step most likely to exhaust memory.
  */
 
-import { createCanvas, type Canvas } from "@napi-rs/canvas";
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { DrawablePage } from "@/engine/types";
+import { createCanvas } from "./canvas";
 
-/** Cap the raster scale so a huge page cannot blow up memory on its own. */
+const require = createRequire(import.meta.url);
+
+/** Cap the raster scale so one huge page cannot blow up memory alone. */
 const MAX_SCALE = 3.0;
-/** Extra resolution over the output width, for crisp downscaling. */
-const OVERSAMPLE = 1.25;
+/**
+ * Extra resolution over the size the page is actually drawn at.
+ *
+ * Kept near 1 on purpose. node-canvas rescales in software on every
+ * drawImage, so a page rasterized larger than it is drawn pays that
+ * difference on every frame: a 1600px page drawn into a 1280px frame
+ * measured 289ms per frame, which was most of the render.
+ */
+const OVERSAMPLE = 1.04;
 
 export interface RasterResult {
   pages: DrawablePage[];
@@ -25,10 +38,24 @@ export interface RasterOptions {
   data: Uint8Array;
   pageFrom: number;
   pageTo: number;
-  /** Width of the output frame; pages are sized relative to this. */
+  /**
+   * The width, in output pixels, that a page will actually be drawn at.
+   * Pages are rasterized to match, so no per-frame rescaling is needed.
+   */
   outputWidth: number;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
+}
+
+/** Where pdfjs keeps the assets it needs for fonts and CJK encodings. */
+function assetPaths() {
+  const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  return {
+    // Trailing separators are required: pdfjs concatenates a filename onto
+    // these, it does not join paths.
+    standardFontDataUrl: path.join(pdfjsRoot, "standard_fonts") + path.sep,
+    cMapUrl: path.join(pdfjsRoot, "cmaps") + path.sep,
+  };
 }
 
 /**
@@ -45,12 +72,16 @@ async function loadPdfjs() {
 
 export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
   const pdfjs = await loadPdfjs();
+  const assets = assetPaths();
 
   const doc = await pdfjs.getDocument({
     data: opts.data,
-    // Fonts and images come from the file itself; nothing is fetched.
-    disableFontFace: false,
-    useSystemFonts: true,
+    // Without these, any PDF relying on the standard fonts (Helvetica,
+    // Times, Courier) or a CJK encoding fails to open.
+    standardFontDataUrl: assets.standardFontDataUrl,
+    cMapUrl: assets.cMapUrl,
+    cMapPacked: true,
+    useSystemFonts: false,
     isEvalSupported: false,
   }).promise;
 
@@ -62,47 +93,45 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
   const pages: DrawablePage[] = [];
   const targetWidth = Math.round(opts.outputWidth * OVERSAMPLE);
 
-  for (let num = from; num <= to; num++) {
-    if (opts.signal?.aborted) throw new Error("cancelled");
+  try {
+    for (let num = from; num <= to; num++) {
+      if (opts.signal?.aborted) throw new Error("cancelled");
 
-    const page = await doc.getPage(num);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(MAX_SCALE, targetWidth / base.width);
-    const viewport = page.getViewport({ scale });
+      const page = await doc.getPage(num);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(MAX_SCALE, targetWidth / base.width);
+      const viewport = page.getViewport({ scale });
 
-    const canvas = createCanvas(Math.round(viewport.width), Math.round(viewport.height));
-    const ctx = canvas.getContext("2d");
+      const canvas = createCanvas(Math.round(viewport.width), Math.round(viewport.height));
+      const ctx = canvas.getContext("2d");
 
-    // PDFs assume paper: without this, transparent areas come out black.
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // PDFs assume paper: without this, transparent areas come out black.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    await page.render({
-      // The napi-rs context satisfies the parts of the 2D API pdfjs uses,
-      // but its types are not the DOM ones.
-      canvasContext: ctx as unknown as CanvasRenderingContext2D,
-      viewport,
-    }).promise;
+      await page.render({ canvasContext: ctx, viewport }).promise;
 
-    const chars = await countCharacters(page);
-    const contentBottom = measureContentBottom(ctx, canvas.width, canvas.height);
+      const chars = await countCharacters(page);
+      const contentBottom = measureContentBottom(ctx, canvas.width, canvas.height);
 
-    pages.push({
-      num,
-      width: canvas.width,
-      height: canvas.height,
-      chars,
-      contentBottom,
-      bitmap: canvas as unknown as CanvasImageSource,
-    });
+      pages.push({
+        num,
+        width: canvas.width,
+        height: canvas.height,
+        chars,
+        contentBottom,
+        bitmap: canvas as unknown as CanvasImageSource,
+      });
 
-    // Release pdfjs's own per-page buffers as we go; without this a long
-    // document holds every page's operator list at once.
-    page.cleanup();
-    opts.onProgress?.(pages.length, total);
+      // Release pdfjs's per-page buffers as we go; without this a long
+      // document holds every page's operator list at once.
+      page.cleanup();
+      opts.onProgress?.(pages.length, total);
+    }
+  } finally {
+    await doc.destroy();
   }
 
-  await doc.destroy();
   return { pages, documentPages };
 }
 
@@ -117,7 +146,7 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
  * the result is identical for this purpose and the scan stays cheap.
  */
 function measureContentBottom(
-  ctx: { getImageData: (x: number, y: number, w: number, h: number) => { data: Uint8ClampedArray } },
+  ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
 ): number {
@@ -131,7 +160,7 @@ function measureContentBottom(
       let ink = 0;
       for (let x = 0; x < width; x += SAMPLE_STEP) {
         const i = x * 4;
-        // Alpha 0 is the untouched background, which is not ink.
+        // Alpha 0 is untouched background, which is not ink.
         if (row[i + 3] === 0) continue;
         if (row[i] < INK_THRESHOLD || row[i + 1] < INK_THRESHOLD || row[i + 2] < INK_THRESHOLD) {
           if (++ink >= MIN_INK_PIXELS) {
@@ -148,7 +177,7 @@ function measureContentBottom(
   return 1;
 }
 
-/** Text volume for auto-pace weighting. Failure is fine — it just means even pacing. */
+/** Text volume for auto-pace weighting. Failure just means even pacing. */
 async function countCharacters(page: {
   getTextContent: () => Promise<{ items: unknown[] }>;
 }): Promise<number> {
@@ -167,14 +196,14 @@ async function countCharacters(page: {
 /** Free the bitmaps once encoding is done. */
 export function releasePages(pages: DrawablePage[]): void {
   for (const page of pages) {
-    const canvas = page.bitmap as unknown as Canvas;
-    // Zero the dimensions so the native buffer can be collected promptly
-    // rather than waiting on GC pressure.
+    const canvas = page.bitmap as unknown as { width: number; height: number };
+    // Zeroing the dimensions frees the backing buffer promptly rather than
+    // waiting on GC pressure.
     try {
       canvas.width = 0;
       canvas.height = 0;
     } catch {
-      // Not all image sources are resizable; GC will handle those.
+      // Not every image source is resizable; GC will handle those.
     }
   }
   pages.length = 0;

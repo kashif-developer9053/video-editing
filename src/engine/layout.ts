@@ -167,3 +167,26 @@ export function formatShort(seconds: number): string {
   }
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
+
+/**
+ * The widest a page is ever drawn at, in output pixels.
+ *
+ * Rasterizing to this instead of the frame width matters because node-canvas
+ * rescales in software on every drawImage: a page rasterized wider than it is
+ * drawn pays that difference on every frame of the render.
+ *
+ * "Fit page" shrinks a portrait page to fit the frame height, so it is drawn
+ * far narrower than the frame; this returns that narrower width. Page aspect
+ * ratios are not known until the PDF is open, so A4 portrait is assumed —
+ * the common case, and a wider page simply gets a little oversampling.
+ */
+export function drawnPageWidth(settings: Settings): number {
+  const out = outputSize(settings);
+  const pad = Math.round(out.width * (settings.margin / 100));
+  const avail = out.width - pad * 2;
+  if (settings.fit === "width") return avail;
+
+  const A4_RATIO = 595 / 842;
+  const byHeight = (out.height - pad * 2) * A4_RATIO;
+  return Math.min(avail, byHeight);
+}
