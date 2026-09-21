@@ -52,9 +52,15 @@ body {
   background: var(--ground);
   color: var(--text);
   font-family: var(--font-body), Inter, system-ui, sans-serif;
-  font-size: 14px;
+  /* 16px base: anything smaller makes iOS zoom the page when a field is
+     focused, which throws the layout off on a phone. */
+  font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* The page scrolls now that the layout is no longer a fixed-height app
+     shell, and the sticky action bar clears the phone's home indicator. */
+  min-height: 100%;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 ::-webkit-scrollbar {
@@ -83,35 +89,37 @@ input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
-  height: 18px;
+  /* Tall enough to grab with a thumb. */
+  height: 28px;
   cursor: pointer;
   width: 100%;
+  touch-action: none;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
+  height: 4px;
   background: var(--rule);
   border-radius: 3px;
 }
 input[type="range"]::-moz-range-track {
-  height: 3px;
+  height: 4px;
   background: var(--rule);
   border-radius: 3px;
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  margin-top: -5px;
-  border: 2px solid var(--panel);
+  margin-top: -8px;
+  border: 3px solid var(--panel);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  border: 2px solid var(--panel);
+  border: 3px solid var(--panel);
 }
 input[type="range"]:disabled {
   opacity: 0.36;

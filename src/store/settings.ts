@@ -67,9 +67,11 @@ export const useSettingsStore = create<State>((set) => ({
         source,
         previewKey: null,
         stats: null,
-        // Open on the first page rather than at 0: with a title card set,
-        // time 0 is the middle of its fade-in and the stage looks empty.
-        time: Math.min(duration * 0.2, state.settings.cardSeconds + 1),
+        // Open at the very start, showing the top of page one. Jumping a few
+        // seconds in lands mid-pan, so the first thing someone sees is a page
+        // already half scrolled — which reads as broken rather than as a
+        // preview of the middle.
+        time: 0,
         settings: {
           ...state.settings,
           pageFrom: 1,

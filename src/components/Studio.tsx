@@ -55,69 +55,65 @@ export function Studio() {
   const previewSeq = useRef(0);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const requestPreview = useCallback(
-    (immediate = false) => {
-      if (!source) return;
+  const requestPreview = useCallback(() => {
+    if (!source) return;
+    if (previewTimer.current) clearTimeout(previewTimer.current);
 
-      if (previewTimer.current) clearTimeout(previewTimer.current);
-      const run = async () => {
-        const seq = ++previewSeq.current;
-        const form = new FormData();
-        form.set("settings", JSON.stringify(settings));
-        form.set("time", String(time));
-        // Send the file only when the server has no cached raster for it.
-        if (previewKey) form.set("key", previewKey);
-        else form.set("pdf", source.file);
+    const run = async () => {
+      const seq = ++previewSeq.current;
+      const form = new FormData();
+      form.set("settings", JSON.stringify(settings));
+      form.set("time", String(time));
+      // Send the file only when the server has no cached pages for it.
+      if (previewKey) form.set("key", previewKey);
+      else form.set("pdf", source.file);
 
-        try {
-          const res = await fetch("/api/preview", { method: "POST", body: form });
+      try {
+        const res = await fetch("/api/preview", { method: "POST", body: form });
 
-          if (res.status === 409) {
-            // Cache expired; retry once with the file attached.
-            setPreviewKey(null);
-            return;
-          }
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({ error: "Could not show a preview." }));
-            throw new Error(body.error ?? "Could not show a preview.");
-          }
-          // A newer request has already started; drop this result.
-          if (seq !== previewSeq.current) return;
-
-          const key = res.headers.get("X-Scrollcast-Key");
-          if (key) setPreviewKey(key);
-
-          setStats({
-            frames: Number(res.headers.get("X-Scrollcast-Frames") ?? 0),
-            uniqueFrames: Number(res.headers.get("X-Scrollcast-Unique") ?? 0),
-            predictedSeconds: Number(res.headers.get("X-Scrollcast-Estimate") ?? 0),
-            encoder: res.headers.get("X-Scrollcast-Encoder") ?? "",
-          });
-
-          const blob = await res.blob();
-          window.dispatchEvent(
-            new CustomEvent("scrollcast:preview", { detail: URL.createObjectURL(blob) }),
-          );
-          setError(null);
-        } catch (err) {
-          if (seq === previewSeq.current) {
-            setError(err instanceof Error ? err.message : "Could not show a preview.");
-          }
+        if (res.status === 409) {
+          // The server's cached pages are gone or were prepared for other
+          // settings; clearing the key makes the next attempt send the file.
+          setPreviewKey(null);
+          return;
         }
-      };
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Could not show a preview." }));
+          throw new Error(body.error ?? "Could not show a preview.");
+        }
+        // A newer request has already started; drop this result.
+        if (seq !== previewSeq.current) return;
 
-      if (immediate) void run();
-      else previewTimer.current = setTimeout(run, 220);
-    },
-    [settings, time, source, previewKey, setPreviewKey, setStats],
-  );
+        const key = res.headers.get("X-Scrollcast-Key");
+        if (key) setPreviewKey(key);
+
+        setStats({
+          frames: Number(res.headers.get("X-Scrollcast-Frames") ?? 0),
+          uniqueFrames: Number(res.headers.get("X-Scrollcast-Unique") ?? 0),
+          predictedSeconds: Number(res.headers.get("X-Scrollcast-Estimate") ?? 0),
+          encoder: res.headers.get("X-Scrollcast-Encoder") ?? "",
+        });
+
+        const blob = await res.blob();
+        window.dispatchEvent(
+          new CustomEvent("scrollcast:preview", { detail: URL.createObjectURL(blob) }),
+        );
+        setError(null);
+      } catch (err) {
+        if (seq === previewSeq.current) {
+          setError(err instanceof Error ? err.message : "Could not show a preview.");
+        }
+      }
+    };
+
+    previewTimer.current = setTimeout(run, 220);
+  }, [settings, time, source, previewKey, setPreviewKey, setStats]);
 
   useEffect(() => {
     if (source && status !== "rendering") requestPreview();
     return () => {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
-    // requestPreview closes over everything that should retrigger it.
   }, [requestPreview, source, status]);
 
   /* ---------------- loading ---------------- */
@@ -135,6 +131,8 @@ export function Studio() {
       setError(null);
       setFinished(null);
 
+      const unreadable = "Could not read that PDF. It may be damaged or password protected.";
+
       // One probe render tells us the page count and warms the server cache.
       const form = new FormData();
       form.set("pdf", file);
@@ -144,20 +142,20 @@ export function Studio() {
       try {
         const res = await fetch("/api/preview", { method: "POST", body: form });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "Could not read that PDF. It may be damaged or password protected." }));
-          throw new Error(body.error ?? "Could not read that PDF. It may be damaged or password protected.");
+          const body = await res.json().catch(() => ({ error: unreadable }));
+          throw new Error(body.error ?? unreadable);
         }
         const pages = Number(res.headers.get("X-Scrollcast-Pages") ?? 1);
         setSource({ file, name: file.name, documentPages: pages });
         setPreviewKey(null);
         setStatus("ready");
         setStatusText("Ready");
-        setStatusMeta(`${pages} pages`);
+        setStatusMeta(`${pages} ${pages === 1 ? "page" : "pages"}`);
       } catch (err) {
         setStatus("error");
         setStatusText("Could not open that file");
         setStatusMeta("");
-        setError(err instanceof Error ? err.message : "Could not read that PDF. It may be damaged or password protected.");
+        setError(err instanceof Error ? err.message : unreadable);
       }
     },
     [settings, setSource, setPreviewKey],
@@ -166,10 +164,11 @@ export function Studio() {
   /* ---------------- rendering ---------------- */
 
   const poll = useCallback((id: string) => {
+    const lost = "Lost track of the video. Please try again.";
     const tick = async () => {
       try {
         const res = await fetch(`/api/render/${id}`);
-        if (!res.ok) throw new Error("Lost track of the video. Please try again.");
+        if (!res.ok) throw new Error(lost);
         const data = (await res.json()) as JobProgress & { result: Finished | null };
         setJob(data);
 
@@ -177,7 +176,7 @@ export function Studio() {
           setFinished({ ...data.result, id });
           setStatus("ready");
           setStatusText("Your video is ready");
-          setStatusMeta(`${data.result.encoder}`);
+          setStatusMeta("");
           jobId.current = null;
           return;
         }
@@ -192,12 +191,12 @@ export function Studio() {
 
         setStatusText(data.message);
         setStatusMeta(
-          data.etaSeconds !== null ? `about ${formatShort(data.etaSeconds)} left` : "working out how long",
+          data.etaSeconds !== null ? `about ${formatShort(data.etaSeconds)} left` : "",
         );
         setTimeout(tick, 500);
       } catch (err) {
         setStatus("error");
-        setError(err instanceof Error ? err.message : "Lost track of the video. Please try again.");
+        setError(err instanceof Error ? err.message : lost);
         jobId.current = null;
       }
     };
@@ -241,98 +240,127 @@ export function Studio() {
   const progress = job?.progress ?? 0;
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex flex-none flex-wrap items-center gap-3.5 border-b border-rule bg-panel px-[18px] py-2.5">
-        <div className="mr-auto flex items-baseline gap-2.5">
-          <h1 className="font-display text-[21px] font-bold tracking-[0.055em] uppercase">
-            Scroll<span className="text-accent">cast</span>
-          </h1>
-          <em className="font-mono text-[11px] tracking-[0.09em] text-dim uppercase not-italic">
-            PDF → Video
-          </em>
-        </div>
-        <span className="rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] text-ok">
-          STAYS ON YOUR COMPUTER
+    <div className="flex min-h-full flex-col">
+      <header className="flex flex-none items-center gap-3 border-b border-rule bg-panel px-4 py-3">
+        <h1 className="mr-auto font-display text-xl font-bold tracking-[0.055em] uppercase">
+          Scroll<span className="text-accent">cast</span>
+        </h1>
+        <span className="hidden rounded-full border border-ok/30 bg-ok/10 px-2.5 py-1 text-[11px] text-ok sm:inline">
+          Stays on your computer
         </span>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_352px]">
-        <Stage status={status} statusText={statusText} statusMeta={statusMeta} onFile={onFile} />
+      {/* One column on a phone, side by side once there is room. */}
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 pt-4 pb-32 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+        <div className="lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-13rem)] lg:flex-col">
+          <Stage
+            status={status}
+            statusText={statusText}
+            statusMeta={statusMeta}
+            onFile={onFile}
+          />
+        </div>
 
-        <div className="flex min-h-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        {source ? (
+          <div className="flex flex-col gap-4">
             <Rail disabled={rendering} />
           </div>
+        ) : (
+          <aside className="rounded-xl border border-rule bg-panel p-4">
+            <h2 className="text-sm font-semibold text-ink">How it works</h2>
+            <ol className="mt-3 flex flex-col gap-3 text-sm text-muted">
+              {[
+                "Choose a PDF from your device.",
+                "Pick a style and where you will post it.",
+                "Press Make video, then save the file.",
+              ].map((step, i) => (
+                <li key={step} className="flex gap-3">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-semibold text-accent">
+                    {i + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 text-xs leading-relaxed text-dim">
+              Your PDF is turned into a video on this computer. Nothing is uploaded to the
+              internet, and the video is removed once you save it.
+            </p>
+          </aside>
+        )}
+      </main>
 
-          <div className="flex flex-none flex-col gap-2.5 border-t border-rule bg-panel px-[18px] py-4">
-            {stats && !rendering && !finished && (
-              <p className="text-center font-mono text-[11px] text-dim tabular-nums">
-                about {formatShort(stats.predictedSeconds)} to make
-              </p>
-            )}
-
-            <button
-              type="button"
-              disabled={!source}
-              onClick={rendering ? cancelRender : startRender}
-              className={`flex w-full items-center justify-center gap-2 rounded-[5px] border px-3 py-3 font-display text-[15px] font-semibold tracking-[0.07em] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                rendering
-                  ? "border-rec bg-rec text-white hover:bg-rec/90"
-                  : "border-accent bg-accent text-accentink hover:border-accenthi hover:bg-accenthi"
-              }`}
-            >
-              {rendering ? "Stop" : finished ? "Make it again" : "Make video"}
-            </button>
-
-            {rendering && (
-              <>
-                <div className="h-[3px] overflow-hidden rounded bg-rule">
-                  <span
-                    className="block h-full bg-accent transition-[width] duration-200"
-                    style={{ width: `${Math.round(progress * 100)}%` }}
-                  />
-                </div>
-                <p className="text-center text-[11px] text-dim">
-                  {Math.round(progress * 100)}% done ·{" "}
-                  {job?.etaSeconds !== null && job?.etaSeconds !== undefined
-                    ? `about ${formatShort(job.etaSeconds)} left`
-                    : "working out how long"}
-                </p>
-              </>
-            )}
-
-            {error && (
-              <p className="rounded border border-rec/30 bg-rec/10 px-2.5 py-2 text-[11.5px] text-rec">
+      {/* The action bar follows on a phone and sits in the flow on a desktop. */}
+      {source ? (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-rule bg-panel/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
+            {error ? (
+              <p className="rounded-lg border border-rec/30 bg-rec/10 px-3 py-2 text-xs text-rec">
                 {error}
               </p>
-            )}
+            ) : null}
 
-            {finished && (
-              <div className="flex flex-col gap-2.5 rounded-[5px] border border-ok/30 bg-ok/[0.06] p-2.5">
-                <p className="text-xs text-ok">
+            {finished ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <p className="flex-1 text-sm text-ok">
                   Video ready — {(finished.sizeBytes / 1048576).toFixed(1)} MB
                 </p>
-                <span className="font-mono text-[10.5px] text-muted tabular-nums">
-                  {finished.width}×{finished.height} · {finished.frames} frames ·{" "}
-                  {finished.elapsedSeconds.toFixed(1)}s · {finished.encoder}
-                </span>
-                <a
-                  href={`/api/render/${finished.id}/download`}
-                  className="flex items-center justify-center gap-2 rounded border border-rule bg-panel2 px-3 py-2.5 text-[13px] transition-colors hover:border-rulehi hover:bg-rulehi/20"
-                >
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                    <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z" />
-                  </svg>
-                  Save video
-                </a>
-                <p className="text-center text-[10.5px] text-dim">
-                  The video is removed from your computer after you save it.
-                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={startRender}
+                    className="min-h-12 flex-1 rounded-lg border border-rule bg-panel2 px-4 text-sm transition-colors hover:border-rulehi sm:flex-none"
+                  >
+                    Make again
+                  </button>
+                  <a
+                    href={`/api/render/${finished.id}/download`}
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-5 font-display text-base font-semibold tracking-[0.06em] text-accentink uppercase transition-colors hover:bg-accenthi sm:flex-none"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden className="h-4 w-4 fill-current">
+                      <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z" />
+                    </svg>
+                    Save video
+                  </a>
+                </div>
               </div>
+            ) : (
+              <>
+                {rendering ? (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-rule">
+                      <span
+                        className="block h-full bg-accent transition-[width] duration-200"
+                        style={{ width: `${Math.round(progress * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-center text-xs text-dim">
+                      {Math.round(progress * 100)}% done
+                      {job?.etaSeconds != null ? ` · about ${formatShort(job.etaSeconds)} left` : ""}
+                    </p>
+                  </div>
+                ) : stats ? (
+                  <p className="text-center text-xs text-dim">
+                    Takes about {formatShort(stats.predictedSeconds)} to make
+                  </p>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={rendering ? cancelRender : startRender}
+                  className={`min-h-14 w-full rounded-lg font-display text-lg font-semibold tracking-[0.06em] uppercase transition-colors ${
+                    rendering
+                      ? "bg-rec text-white hover:bg-rec/90"
+                      : "bg-accent text-accentink hover:bg-accenthi"
+                  }`}
+                >
+                  {rendering ? "Stop" : "Make video"}
+                </button>
+              </>
             )}
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

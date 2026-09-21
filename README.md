@@ -66,6 +66,19 @@ Both paths target a similar quality, which matters: an earlier build used
 larger — large enough that a 720p video could come out bigger than the same
 video at 1080p.
 
+## Before it goes public
+
+Set the real address so canonical URLs and share previews point at the right
+place:
+
+```bash
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
+```
+
+Without it those fall back to `localhost`, which search engines will index as
+a broken link. Add a 1200x630 `public/og.png` too — that is the picture shown
+when someone shares the link.
+
 ## Layout
 
 ```

@@ -24,10 +24,11 @@ await page.goto("http://localhost:3000/", { waitUntil: "networkidle" });
 console.log("1. loaded studio");
 
 await page.setInputFiles('input[type="file"][accept*="pdf"]', path.join(root, "test-sample.pdf"));
-await page.waitForSelector('img[alt^="Preview"]', { timeout: 60_000 });
+await page.waitForSelector('img[alt^="What the video"]', { timeout: 60_000 });
 console.log("2. PDF loaded, preview showing");
 
-// Fill in branding so the download name and cards are exercised.
+// Branding lives behind a disclosure now, so open it first.
+await page.getByRole("button", { name: /Add text and your name/i }).click();
 await page.locator("#titleText").fill("Code 413 Assignment 1");
 await page.locator("#subtitleText").fill("Spring 2026 - BA & AD");
 await page.locator("#outroText").fill("Subscribe for more");
