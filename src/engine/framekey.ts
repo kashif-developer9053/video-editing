@@ -14,7 +14,13 @@
  */
 
 import { cardTiming, pageAtProgress } from "./layout";
-import { panDistance, panProgress, quantizeBar, type FrameContext } from "./compositor";
+import {
+  pageScale,
+  panDistance,
+  panProgress,
+  quantizeBar,
+  type FrameContext,
+} from "./compositor";
 
 /** Share of a page's time spent transitioning — must match the compositor. */
 const TRANSITION_SHARE = 0.22;
@@ -95,9 +101,7 @@ function pageOverflow(
 ): number {
   const { out, pad } = layout;
   const page = box.page;
-  const contain = Math.min((out.width - pad * 2) / page.width, (out.height - pad * 2) / page.height);
-  const scale = fit === "width" ? (out.width - pad * 2) / page.width : contain;
-  return panDistance(page, page.height * scale, out, pad);
+  return panDistance(page, page.height * pageScale(page, out, pad, fit), out, pad);
 }
 
 /** Card fades quantised to 1/255 — finer than the eye or the encoder sees. */

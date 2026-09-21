@@ -203,6 +203,32 @@ export function quantizeBar(progress: number, frameWidth: number): number {
 }
 
 /**
+ * A page never grows past this many frames of height under "fill width".
+ * An A4 page filling the width of a 9:16 frame would be about 2.4 frames
+ * tall, and a single hold cannot pan far enough to read all of it.
+ */
+const MAX_PAGE_OVERFLOW = 1.8;
+
+/**
+ * The scale a page is drawn at. Shared so the compositor and the frame-reuse
+ * cache cannot disagree — if they do, reuse freezes moving frames.
+ */
+export function pageScale(
+  page: { width: number; height: number },
+  out: OutputSize,
+  pad: number,
+  fit: string,
+): number {
+  const contain = Math.min((out.width - pad * 2) / page.width, (out.height - pad * 2) / page.height);
+  if (fit !== "width") return contain;
+
+  const fillWidth = (out.width - pad * 2) / page.width;
+  const capped = Math.min(fillWidth, (out.height * MAX_PAGE_OVERFLOW) / page.height);
+  // Never shrink below "fit the page": the cap is an upper bound, not a floor.
+  return Math.max(contain, capped);
+}
+
+/**
  * How far a page should pan: enough to bring its last line into view, not
  * the full height of the paper. Panning past the content shows blank paper,
  * which reads as a broken render.
@@ -264,12 +290,7 @@ function drawFitted(
   // and the frame is landscape. "Fit page" accepts that trade; "fill width"
   // instead scales to the frame width and pins to the top, so the text is
   // legible and the rest of the page is simply below the cut.
-  const contain = Math.min(
-    (out.width - pad * 2) / page.width,
-    (out.height - pad * 2) / page.height,
-  );
-  const scale =
-    fc.settings.fit === "width" ? (out.width - pad * 2) / page.width : contain;
+  const scale = pageScale(page, out, pad, fc.settings.fit);
 
   const width = page.width * scale;
   const height = page.height * scale;
