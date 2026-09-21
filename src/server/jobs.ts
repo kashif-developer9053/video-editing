@@ -118,7 +118,7 @@ export function cancelJob(id: string): boolean {
   const job = jobs.get(id);
   if (!job) return false;
   job.controller.abort();
-  job.progress = { ...job.progress, status: "cancelled", message: "Cancelled" };
+  job.progress = { ...job.progress, status: "cancelled", message: "Stopped" };
   job.finishedAt = Date.now();
   return true;
 }

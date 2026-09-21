@@ -147,12 +147,11 @@ export function Stage({
               <path d="M12 18v-6" />
               <path d="m9 15 3-3 3 3" />
             </svg>
-            <h2 className="font-display text-2xl font-semibold tracking-wide uppercase">Drop a PDF</h2>
+            <h2 className="font-display text-2xl font-semibold tracking-wide uppercase">Add your PDF</h2>
             <p className="max-w-[42ch] text-[13px] text-muted">
-              Rendered on this machine by FFmpeg. Nothing is uploaded to the internet and no video is
-              kept after you download it.
+              Drag a PDF here, or click to choose one. Your file never leaves your computer.
             </p>
-            <small className="font-mono text-[11px] text-dim">Click to browse</small>
+            <small className="font-mono text-[11px] text-dim">PDF files only</small>
           </button>
         )}
 
@@ -170,7 +169,7 @@ export function Stage({
           <button
             type="button"
             disabled={!source || busy}
-            aria-label={isPlaying ? "Pause preview" : "Play preview"}
+            aria-label={isPlaying ? "Pause" : "Play"}
             onClick={() => setPlaying((p) => !p)}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-rule bg-panel2 transition-colors hover:enabled:border-accent hover:enabled:bg-rulehi/30 disabled:cursor-not-allowed disabled:opacity-35"
           >
@@ -184,7 +183,7 @@ export function Stage({
             max={1000}
             value={Math.round((time / Math.max(1, settings.duration)) * 1000)}
             disabled={!source || busy}
-            aria-label="Scrub the preview"
+            aria-label="Move through the video"
             onChange={(e) => {
               setPlaying(false);
               setTime((Number(e.target.value) / 1000) * settings.duration);

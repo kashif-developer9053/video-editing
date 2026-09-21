@@ -88,15 +88,60 @@ export function pageWeights(pages: DrawablePage[], settings: Settings): number[]
   }
 
   const raw = pages.map((p) => {
-    // The 0.45 floor keeps a near-empty page from flashing past.
-    return 0.45 + Math.min(2.2, p.chars / 900);
+    // Text density, and how much of the page is covered by anything at all.
+    // Coverage matters because a scanned page or a full-page diagram has no
+    // characters: weighting on text alone rushes those pages past.
+    const byText = Math.min(2.2, p.chars / 900);
+    const byInk = Math.min(2.2, (p.coverage ?? 0) * 6);
+    // The larger of the two, so neither a wall of text nor a full-page image
+    // is treated as empty. The 0.6 floor keeps a blank page from flashing by.
+    return 0.6 + Math.max(byText, byInk);
   });
-  const total = raw.reduce((a, b) => a + b, 0);
-  return raw.map((v) => v / total);
+
+  // Clamp how far pages can differ. Without this a dense page can run many
+  // times longer than a sparse one, which reads as the video stalling.
+  const maxRatio = 2.2;
+  const smallest = Math.min(...raw);
+  const capped = raw.map((v) => Math.min(v, smallest * maxRatio));
+
+  const total = capped.reduce((a, b) => a + b, 0);
+  return capped.map((v) => v / total);
 }
 
 export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+/** Share of a scroll spent easing in, and again easing out. */
+const EASE_SHARE = 0.06;
+
+/**
+ * Constant-speed scrolling with a short ramp at each end.
+ *
+ * easeInOut across a whole video crawls at the start, races through the
+ * middle and crawls again — so pages pass at visibly different speeds. This
+ * ramps up over the first few percent, holds one steady rate for the body,
+ * and ramps down at the end.
+ */
+export function easeEnds(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  const e = EASE_SHARE;
+  if (e <= 0) return clamped;
+
+  // Distance covered by each ramp, at half the cruising rate on average.
+  // Solving for a rate that still covers the whole strip in the time given:
+  const rate = 1 / (1 - e);
+
+  if (clamped < e) {
+    // Accelerating: distance is the area under a linear ramp.
+    return (rate * clamped * clamped) / (2 * e);
+  }
+  if (clamped > 1 - e) {
+    const remaining = 1 - clamped;
+    return 1 - (rate * remaining * remaining) / (2 * e);
+  }
+  // Cruising at a constant rate.
+  return rate * (clamped - e / 2);
 }
 
 /**

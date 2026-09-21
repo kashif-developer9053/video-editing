@@ -19,6 +19,7 @@ import { predictSeconds } from "@/engine/estimate";
 import { DEFAULT_SETTINGS, type DrawablePage, type Settings } from "@/engine/types";
 import { createCanvas } from "@/server/canvas";
 import { detectEncoder } from "@/server/ffmpeg";
+import { prescalePages } from "@/server/prescale";
 import { rasterizePdf, releasePages } from "@/server/raster";
 
 export const runtime = "nodejs";
@@ -27,8 +28,26 @@ export const maxDuration = 120;
 interface CacheEntry {
   pages: DrawablePage[];
   documentPages: number;
-  outputWidth: number;
+  /**
+   * The settings the cached bitmaps were prepared for. Prescaling rewrites
+   * pages in place, so a cache entry is only reusable while these match —
+   * otherwise the preview would draw a bitmap sized for different settings
+   * and drift from the finished video.
+   */
+  shape: string;
   touchedAt: number;
+}
+
+/** The settings that decide how a page bitmap is sized. */
+function shapeOf(settings: Settings): string {
+  return [
+    Math.round(drawnPageWidth(settings)),
+    settings.mode,
+    settings.fit,
+    settings.platform,
+    settings.quality,
+    settings.margin,
+  ].join(":");
 }
 
 // One document at a time is all the editor ever previews; holding more would
@@ -63,8 +82,8 @@ export async function POST(request: Request) {
     key = hashOf(bytes, settings.pageFrom, settings.pageTo);
     entry = cache.get(key);
 
-    // Re-rasterize when the output got bigger, or the pages would be soft.
-    if (!entry || entry.outputWidth < drawnPageWidth(settings)) {
+    // Re-rasterize whenever the page bitmaps would be sized differently.
+    if (!entry || entry.shape !== shapeOf(settings)) {
       if (entry) releasePages(entry.pages);
       const result = await rasterizePdf({
         data: bytes,
@@ -72,10 +91,13 @@ export async function POST(request: Request) {
         pageTo: settings.pageTo,
         outputWidth: drawnPageWidth(settings),
       });
+      // Exactly what the renderer does, so the preview cannot drift from
+      // the finished video.
+      prescalePages(result.pages, settings);
       entry = {
         pages: result.pages,
         documentPages: result.documentPages,
-        outputWidth: drawnPageWidth(settings),
+        shape: shapeOf(settings),
         touchedAt: Date.now(),
       };
       cache.set(key, entry);
@@ -84,8 +106,9 @@ export async function POST(request: Request) {
   } else if (typeof providedKey === "string") {
     key = providedKey;
     entry = cache.get(key);
-    if (!entry) {
-      // The client should re-send the file; its cached pages have expired.
+    if (!entry || entry.shape !== shapeOf(settings)) {
+      // The client should re-send the file: either the cache expired, or a
+      // setting changed that needs the pages prepared differently.
       return NextResponse.json({ error: "stale-key" }, { status: 409 });
     }
   } else {

@@ -15,7 +15,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!job) {
     // Either it never existed or it has been swept; the client treats both
     // the same way, so there is nothing to distinguish.
-    return NextResponse.json({ error: "That render is no longer available." }, { status: 404 });
+    return NextResponse.json({ error: "That video is no longer available." }, { status: 404 });
   }
 
   return NextResponse.json({
@@ -29,7 +29,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { id } = await context.params;
   const job = getJob(id);
   if (!job) {
-    return NextResponse.json({ error: "That render is no longer available." }, { status: 404 });
+    return NextResponse.json({ error: "That video is no longer available." }, { status: 404 });
   }
 
   const running =

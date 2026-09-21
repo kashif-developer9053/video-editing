@@ -20,10 +20,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const job = getJob(id);
 
   if (!job) {
-    return NextResponse.json({ error: "That render is no longer available." }, { status: 404 });
+    return NextResponse.json({ error: "That video is no longer available." }, { status: 404 });
   }
   if (job.progress.status !== "done") {
-    return NextResponse.json({ error: "That render is not finished yet." }, { status: 409 });
+    return NextResponse.json({ error: "That video is not finished yet." }, { status: 409 });
   }
 
   let size: number;
@@ -31,7 +31,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const stat = await fs.stat(job.outputPath);
     size = stat.size;
   } catch {
-    return NextResponse.json({ error: "The video file is gone." }, { status: 410 });
+    return NextResponse.json({ error: "That video file is no longer on this computer." }, { status: 410 });
   }
 
   const stream = Readable.toWeb(createReadStream(job.outputPath)) as ReadableStream<Uint8Array>;

@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "FFmpeg was not found. Install it and make sure `ffmpeg` runs from your terminal, then try again.",
+          "The video tool (FFmpeg) is not installed. Install it, then restart the app.",
       },
       { status: 503 },
     );
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   if (atCapacity()) {
     return NextResponse.json(
-      { error: "A render is already running. Wait for it to finish, or cancel it." },
+      { error: "A video is already being made. Wait for it to finish, or stop it first." },
       { status: 429 },
     );
   }
@@ -49,15 +49,15 @@ export async function POST(request: Request) {
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ error: "Could not read the upload." }, { status: 400 });
+    return NextResponse.json({ error: "Could not read your file." }, { status: 400 });
   }
 
   const pdfFile = form.get("pdf");
   if (!(pdfFile instanceof File)) {
-    return NextResponse.json({ error: "No PDF was attached." }, { status: 400 });
+    return NextResponse.json({ error: "No PDF was chosen." }, { status: 400 });
   }
   if (pdfFile.size === 0) {
-    return NextResponse.json({ error: "That PDF is empty." }, { status: 400 });
+    return NextResponse.json({ error: "That PDF has nothing in it." }, { status: 400 });
   }
   if (pdfFile.size > LIMITS.pdfBytes) {
     return NextResponse.json(
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
         framesDone: result.frames,
         framesTotal: result.frames,
         etaSeconds: 0,
-        message: "Ready to download",
+        message: "Your video is ready",
       });
     })
     .catch(async (err: unknown) => {
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
         framesDone: job.progress.framesDone,
         framesTotal: job.progress.framesTotal,
         etaSeconds: null,
-        message: cancelled ? "Cancelled" : "Render failed",
+        message: cancelled ? "Stopped" : "Something went wrong",
         error: cancelled ? undefined : describeError(err),
       });
 
@@ -148,13 +148,13 @@ export async function POST(request: Request) {
 }
 
 function parseSettings(raw: FormDataEntryValue | null): Settings {
-  if (typeof raw !== "string") throw new Error("Settings were missing from the request.");
+  if (typeof raw !== "string") throw new Error("Some settings were missing.");
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error("Settings were not valid JSON.");
+    throw new Error("Those settings are not valid.");
   }
   if (typeof parsed !== "object" || parsed === null) {
     throw new Error("Settings were not valid.");
@@ -163,7 +163,7 @@ function parseSettings(raw: FormDataEntryValue | null): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...(parsed as Partial<Settings>) };
 
   if (!Number.isFinite(merged.duration) || merged.duration <= 0) {
-    throw new Error("The video length must be a positive number of seconds.");
+    throw new Error("Please choose how long the video should be.");
   }
   if (merged.duration > LIMITS.durationSeconds) {
     throw new Error(`The video cannot be longer than ${LIMITS.durationSeconds / 60} minutes.`);
@@ -184,9 +184,9 @@ function parseSettings(raw: FormDataEntryValue | null): Settings {
 /** Turn an ffmpeg or pdfjs failure into something a person can act on. */
 function describeError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  if (/password/i.test(message)) return "That PDF is password protected.";
-  if (/Invalid PDF|InvalidPDFException/i.test(message)) return "That file is not a readable PDF.";
-  if (/ENOENT.*ffmpeg|ffmpeg.*ENOENT/i.test(message)) return "FFmpeg could not be started.";
-  if (/no pages/i.test(message)) return "The selected page range is empty.";
+  if (/password/i.test(message)) return "That PDF is locked with a password.";
+  if (/Invalid PDF|InvalidPDFException/i.test(message)) return "That file could not be opened as a PDF.";
+  if (/ENOENT.*ffmpeg|ffmpeg.*ENOENT/i.test(message)) return "The video tool could not start.";
+  if (/no pages/i.test(message)) return "No pages were selected.";
   return message.split("\n")[0].slice(0, 300);
 }

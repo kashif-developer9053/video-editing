@@ -36,17 +36,17 @@ await page.locator("#duration").fill("20");
 await page.waitForTimeout(1500);
 console.log("3. settings filled");
 
-await page.getByRole("button", { name: /^Render video$/i }).click();
+await page.getByRole("button", { name: /^Make video$/i }).click();
 console.log("4. render started");
 
 // Watch the progress line until the download button appears.
-const downloadLink = page.getByRole("link", { name: /Download video/i });
+const downloadLink = page.getByRole("link", { name: /Save video/i });
 const started = Date.now();
 await downloadLink.waitFor({ timeout: 180_000 });
 const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 console.log(`5. render finished in ${elapsed}s`);
 
-const resultText = await page.locator("text=/Ready —/").textContent().catch(() => "");
+const resultText = await page.locator("text=/Video ready/").textContent().catch(() => "");
 const metaText = await page.locator("text=/fps|frames|×/").last().textContent().catch(() => "");
 console.log(`   ${resultText.trim()}`);
 console.log(`   ${metaText.trim()}`);

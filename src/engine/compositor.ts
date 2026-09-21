@@ -9,6 +9,7 @@
 import {
   autopaceDistance,
   cardTiming,
+  easeEnds,
   easeInOut,
   pageAtProgress,
   pageWeights,
@@ -115,7 +116,11 @@ function drawScroll(ctx: Ctx, out: OutputSize, progress: number, fc: FrameContex
   if (settings.mode === "autopace") {
     p = autopaceDistance(progress, layout, weights);
   } else if (settings.ease) {
-    p = easeInOut(progress);
+    // Only the first and last moments ease; everything between scrolls at a
+    // constant rate. A full easeInOut across the whole video is slow at the
+    // ends and fast through the middle, so pages visibly pass at different
+    // speeds — which is exactly what "same speed" should prevent.
+    p = easeEnds(progress);
   }
 
   // A strip shorter than the frame has nowhere to travel, so centre it.

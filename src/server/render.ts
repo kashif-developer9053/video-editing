@@ -54,7 +54,7 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
   };
 
   /* ---- 1. rasterize ---- */
-  report({ status: "rasterizing", message: "Reading the PDF" });
+  report({ status: "rasterizing", message: "Opening your PDF" });
 
   const { pages } = await rasterizePdf({
     data: input.pdf,
@@ -66,13 +66,13 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
       report({
         status: "rasterizing",
         progress: (done / total) * 0.15,
-        message: `Preparing page ${done} of ${total}`,
+        message: `Reading page ${done} of ${total}`,
       });
     },
   });
 
   if (!pages.length) {
-    throw new Error("The selected page range produced no pages.");
+    throw new Error("No pages were selected.");
   }
 
   // Resample each page once to the size it will be drawn at, so the frame
@@ -148,7 +148,7 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
             framesDone: estimator.done,
             framesTotal: totalFrames,
             etaSeconds: estimator.etaSeconds(),
-            message: `Rendering frame ${estimator.done} of ${totalFrames}`,
+            message: "Making your video",
           });
         }
       }
@@ -159,7 +159,7 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
         framesDone: totalFrames,
         framesTotal: totalFrames,
         etaSeconds: null,
-        message: "Finishing the file",
+        message: "Almost done",
       });
 
       await sink.finish();
@@ -176,7 +176,7 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
       framesDone: totalFrames,
       framesTotal: totalFrames,
       etaSeconds: 0,
-      message: "Done",
+      message: "Finished",
     });
 
     return {

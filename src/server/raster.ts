@@ -9,12 +9,12 @@
  * 2560px is the step most likely to exhaust memory.
  */
 
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { DrawablePage } from "@/engine/types";
 import { createCanvas } from "./canvas";
 
-const require = createRequire(import.meta.url);
 
 /** Cap the raster scale so one huge page cannot blow up memory alone. */
 const MAX_SCALE = 3.0;
@@ -47,14 +47,88 @@ export interface RasterOptions {
   signal?: AbortSignal;
 }
 
-/** Where pdfjs keeps the assets it needs for fonts and CJK encodings. */
-function assetPaths() {
-  const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
-  return {
-    // Trailing separators are required: pdfjs concatenates a filename onto
-    // these, it does not join paths.
-    standardFontDataUrl: path.join(pdfjsRoot, "standard_fonts") + path.sep,
-    cMapUrl: path.join(pdfjsRoot, "cmaps") + path.sep,
+/**
+ * Where pdfjs keeps the fonts and CJK encodings it needs.
+ *
+ * Found by walking up from the working directory rather than with
+ * require.resolve: under Turbopack that returns a bundler-internal virtual
+ * path ("[externals]/pdfjs-dist/package.json [external] (...)"), and
+ * path.dirname of it points nowhere real. The failure is quiet — pdfjs falls
+ * back to a built-in fetch, cannot find the file, and every glyph is dropped
+ * with "Requesting object that isn't resolved yet", leaving a blank page and
+ * a successful response.
+ */
+function assetDirs(): { fonts: string; cmaps: string } {
+  if (cachedAssetDirs) return cachedAssetDirs;
+
+  const candidates: string[] = [];
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    candidates.push(path.join(dir, "node_modules", "pdfjs-dist"));
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  for (const root of candidates) {
+    const fonts = path.join(root, "standard_fonts");
+    if (existsSync(path.join(fonts, "LiberationSans-Regular.ttf"))) {
+      cachedAssetDirs = { fonts, cmaps: path.join(root, "cmaps") };
+      return cachedAssetDirs;
+    }
+  }
+
+  throw new Error(
+    "Could not find the pdfjs font files. Run `npm install` and try again.",
+  );
+}
+
+let cachedAssetDirs: { fonts: string; cmaps: string } | null = null;
+
+/**
+ * Feed pdfjs its own asset files from disk.
+ *
+ * Passing `standardFontDataUrl` / `cMapUrl` as filesystem paths works under
+ * plain Node but not inside Next: pdfjs treats them as URLs and fetches
+ * them, which fails silently. The symptom is every glyph dropped with
+ * "Requesting object that isn't resolved yet Helvetica_path_N", and a page
+ * that renders blank while reporting success.
+ *
+ * These factories read the bytes directly, so no fetch is involved and both
+ * runtimes behave the same. The shapes below match pdfjs's own
+ * BaseStandardFontDataFactory and BaseCMapReaderFactory.
+ */
+function readAsset(dir: string, name: string): Promise<Uint8Array> {
+  // Keep the read inside the asset directory whatever pdfjs asks for.
+  const target = path.resolve(dir, name);
+  if (!target.startsWith(path.resolve(dir) + path.sep)) {
+    throw new Error(`Refusing to read outside the asset directory: ${name}`);
+  }
+  return fs.readFile(target).then((buf) => new Uint8Array(buf));
+}
+
+function standardFontFactory(dir: string) {
+  return class {
+    async fetch({ filename }: { filename: string }): Promise<Uint8Array> {
+      if (!filename) throw new Error("Font filename must be specified.");
+      return readAsset(dir, filename);
+    }
+  };
+}
+
+function cMapFactory(dir: string) {
+  return class {
+    async fetch({ name }: { name: string }): Promise<{
+      cMapData: Uint8Array;
+      compressionType: number;
+    }> {
+      if (!name) throw new Error("CMap name must be specified.");
+      return {
+        cMapData: await readAsset(dir, `${name}.bcmap`),
+        // 1 is CMapCompressionType.BINARY, which is what .bcmap files are.
+        compressionType: 1,
+      };
+    }
   };
 }
 
@@ -72,18 +146,18 @@ async function loadPdfjs() {
 
 export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
   const pdfjs = await loadPdfjs();
-  const assets = assetPaths();
+  const dirs = assetDirs();
 
   const doc = await pdfjs.getDocument({
     data: opts.data,
-    // Without these, any PDF relying on the standard fonts (Helvetica,
-    // Times, Courier) or a CJK encoding fails to open.
-    standardFontDataUrl: assets.standardFontDataUrl,
-    cMapUrl: assets.cMapUrl,
+    // Without these, any PDF using the standard fonts (Helvetica, Times,
+    // Courier) or a CJK encoding renders with no text at all.
+    StandardFontDataFactory: standardFontFactory(dirs.fonts),
+    CMapReaderFactory: cMapFactory(dirs.cmaps),
     cMapPacked: true,
     useSystemFonts: false,
     isEvalSupported: false,
-  }).promise;
+  } as Parameters<typeof pdfjs.getDocument>[0]).promise;
 
   const documentPages = doc.numPages;
   const from = Math.max(1, Math.min(documentPages, opts.pageFrom));
@@ -112,13 +186,14 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
       await page.render({ canvasContext: ctx, viewport }).promise;
 
       const chars = await countCharacters(page);
-      const contentBottom = measureContentBottom(ctx, canvas.width, canvas.height);
+      const { contentBottom, coverage } = measureInk(ctx, canvas.width, canvas.height);
 
       pages.push({
         num,
         width: canvas.width,
         height: canvas.height,
         chars,
+        coverage,
         contentBottom,
         bitmap: canvas as unknown as CanvasImageSource,
       });
@@ -136,45 +211,61 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
 }
 
 /**
- * Find the last row of the page that carries any ink.
+ * Scan the rendered page once for two things:
  *
- * Panning the full height of a page whose text stops a third of the way down
- * drifts across blank paper, which looks broken. Measuring the pixels rather
- * than the text geometry also catches images, tables and stamps.
+ * - where its content stops, so panning does not drift across blank paper;
+ * - how much of it is covered, which is what screen time should follow.
  *
- * Rows are sampled rather than read whole: at a few hundred samples per row
- * the result is identical for this purpose and the scan stays cheap.
+ * Coverage is measured from pixels rather than the text layer because a
+ * scanned page or a full-page diagram has no characters at all. Weighting by
+ * character count alone rushes those pages past while lingering on text.
+ *
+ * The scan samples a grid rather than every pixel: at a few hundred samples
+ * per axis the numbers are identical for this purpose and it stays cheap.
  */
-function measureContentBottom(
+function measureInk(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-): number {
-  const INK_THRESHOLD = 246; // anything darker than near-white counts as content
-  const MIN_INK_PIXELS = 3; // ignore stray specks and compression noise
-  const SAMPLE_STEP = Math.max(1, Math.floor(width / 320));
+): { contentBottom: number; coverage: number } {
+  const INK_THRESHOLD = 246; // darker than near-white counts as content
+  const MIN_INK_PIXELS = 3; // ignore specks and compression noise
+  const step = Math.max(1, Math.floor(width / 320));
+  const rowStep = Math.max(1, Math.floor(height / 320));
+
+  let lastInkRow = -1;
+  let inkSamples = 0;
+  let totalSamples = 0;
 
   try {
-    for (let y = height - 1; y >= 0; y--) {
+    for (let y = 0; y < height; y += rowStep) {
       const row = ctx.getImageData(0, y, width, 1).data;
-      let ink = 0;
-      for (let x = 0; x < width; x += SAMPLE_STEP) {
+      let rowInk = 0;
+      for (let x = 0; x < width; x += step) {
         const i = x * 4;
+        totalSamples++;
         // Alpha 0 is untouched background, which is not ink.
         if (row[i + 3] === 0) continue;
         if (row[i] < INK_THRESHOLD || row[i + 1] < INK_THRESHOLD || row[i + 2] < INK_THRESHOLD) {
-          if (++ink >= MIN_INK_PIXELS) {
-            // Leave a little breathing room below the last line.
-            return Math.min(1, (y + height * 0.02) / height);
-          }
+          rowInk++;
+          inkSamples++;
         }
       }
+      if (rowInk >= MIN_INK_PIXELS) lastInkRow = y;
     }
   } catch {
-    // If the pixels cannot be read, fall back to using the whole page.
-    return 1;
+    // If the pixels cannot be read, assume a full page of average density.
+    return { contentBottom: 1, coverage: 0.25 };
   }
-  return 1;
+
+  const contentBottom =
+    lastInkRow < 0
+      ? 1
+      : // Leave a little breathing room below the last line.
+        Math.min(1, (lastInkRow + height * 0.02) / height);
+
+  const coverage = totalSamples > 0 ? inkSamples / totalSamples : 0;
+  return { contentBottom, coverage };
 }
 
 /** Text volume for auto-pace weighting. Failure just means even pacing. */

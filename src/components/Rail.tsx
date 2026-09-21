@@ -26,8 +26,8 @@ import {
 const MODES: { key: MotionMode; name: string; blurb: string; art: React.ReactNode }[] = [
   {
     key: "slide",
-    name: "Slide",
-    blurb: "Holds each page and pans down it, then moves on",
+    name: "One page at a time",
+    blurb: "Shows a page, moves slowly down it, then goes to the next",
     art: (
       <>
         <rect x="3" y="3" width="24" height="16" rx="2" />
@@ -37,8 +37,8 @@ const MODES: { key: MotionMode; name: string; blurb: string; art: React.ReactNod
   },
   {
     key: "scroll",
-    name: "Continuous",
-    blurb: "One long strip, scrolling top to bottom without stopping",
+    name: "Non-stop scroll",
+    blurb: "All pages joined together, scrolling down without stopping",
     art: (
       <>
         <path d="M8 4h44M8 11h44M8 18h30" />
@@ -49,7 +49,7 @@ const MODES: { key: MotionMode; name: string; blurb: string; art: React.ReactNod
   {
     key: "kenburns",
     name: "Slow zoom",
-    blurb: "Holds each page with a gentle drift and zoom",
+    blurb: "Shows each page while slowly zooming in",
     art: (
       <>
         <rect x="3" y="3" width="54" height="16" rx="2" />
@@ -59,8 +59,8 @@ const MODES: { key: MotionMode; name: string; blurb: string; art: React.ReactNod
   },
   {
     key: "autopace",
-    name: "Auto pace",
-    blurb: "Scrolls, but slows down on pages with more text",
+    name: "Smart speed",
+    blurb: "Scrolls slower on busy pages and faster on empty ones",
     art: (
       <>
         <path d="M8 5h44M8 11h30M8 17h44" />
@@ -95,9 +95,9 @@ export function Rail({ disabled }: { disabled: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-l border-rule bg-panel">
-      <Group title="Source">
+      <Group title="Your PDF">
         <Row>
-          <Field label="First page" htmlFor="pageFrom">
+          <Field label="Start at page" htmlFor="pageFrom">
             <NumberInput
               id="pageFrom"
               value={settings.pageFrom}
@@ -107,7 +107,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
               onChange={(v) => set("pageFrom", Math.max(1, Math.min(maxPage, v)))}
             />
           </Field>
-          <Field label="Last page" htmlFor="pageTo">
+          <Field label="End at page" htmlFor="pageTo">
             <NumberInput
               id="pageTo"
               value={settings.pageTo}
@@ -120,7 +120,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
         </Row>
       </Group>
 
-      <Group title="Motion">
+      <Group title="How it moves">
         <div className="grid grid-cols-2 gap-2">
           {MODES.map((mode) => {
             const active = settings.mode === mode.key;
@@ -153,7 +153,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
           })}
         </div>
 
-        <Field label="Video length" hint={formatShort(settings.duration)} htmlFor="duration">
+        <Field label="How long the video is" hint={formatShort(settings.duration)} htmlFor="duration">
           <Range
             id="duration"
             value={settings.duration}
@@ -166,17 +166,17 @@ export function Rail({ disabled }: { disabled: boolean }) {
         </Field>
 
         {settings.mode === "slide" && (
-          <Field label="Between pages" htmlFor="transition">
+          <Field label="How pages change" htmlFor="transition">
             <Select
               id="transition"
               value={settings.transition}
               disabled={disabled}
               onChange={(v) => set("transition", v as typeof settings.transition)}
               options={[
-                { value: "fade", label: "Cross fade" },
-                { value: "cut", label: "Hard cut" },
-                { value: "push", label: "Push up" },
-                { value: "slide", label: "Slide across" },
+                { value: "fade", label: "Fade into each other" },
+                { value: "cut", label: "Change instantly" },
+                { value: "push", label: "Push upward" },
+                { value: "slide", label: "Slide sideways" },
               ]}
             />
           </Field>
@@ -189,13 +189,13 @@ export function Rail({ disabled }: { disabled: boolean }) {
             disabled={disabled}
             onChange={(v) => set("ease", v)}
           >
-            Ease in and out at the start and end
+            Start and finish gently
           </Check>
         )}
       </Group>
 
-      <Group title="Format">
-        <Field label="Platform">
+      <Group title="Video size">
+        <Field label="Where will you post it?">
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(PLATFORMS) as PlatformKey[]).map((key) => {
               const platform = PLATFORMS[key];
@@ -224,49 +224,49 @@ export function Rail({ disabled }: { disabled: boolean }) {
         </Field>
 
         <Row>
-          <Field label="Resolution" htmlFor="quality">
+          <Field label="Picture quality" htmlFor="quality">
             <Select
               id="quality"
               value={settings.quality}
               disabled={disabled}
               onChange={(v) => set("quality", Number(v) as typeof settings.quality)}
               options={[
-                { value: 720, label: "720p" },
-                { value: 1080, label: "1080p" },
-                { value: 1440, label: "1440p" },
+                { value: 720, label: "Normal (720p) — fastest" },
+                { value: 1080, label: "High (1080p)" },
+                { value: 1440, label: "Very high (1440p) — slowest" },
               ]}
             />
           </Field>
-          <Field label="Frame rate" htmlFor="fps">
+          <Field label="Smoothness" htmlFor="fps">
             <Select
               id="fps"
               value={settings.fps}
               disabled={disabled}
               onChange={(v) => set("fps", Number(v))}
               options={[
-                { value: 24, label: "24 fps" },
-                { value: 30, label: "30 fps" },
-                { value: 60, label: "60 fps" },
+                { value: 24, label: "Normal — fastest" },
+                { value: 30, label: "Smooth" },
+                { value: 60, label: "Very smooth — slowest" },
               ]}
             />
           </Field>
         </Row>
 
-        <Field label="Page fit" htmlFor="fit">
+        <Field label="Page size on screen" htmlFor="fit">
           <Select
             id="fit"
             value={settings.fit}
             disabled={disabled}
             onChange={(v) => set("fit", v as typeof settings.fit)}
             options={[
-              { value: "width", label: "Fill the width, pan down" },
-              { value: "contain", label: "Fit the whole page" },
+              { value: "width", label: "Big — fills the screen, moves down" },
+              { value: "contain", label: "Small — whole page always visible" },
             ]}
           />
         </Field>
 
         <Row>
-          <Field label="Backdrop" htmlFor="bgColor">
+          <Field label="Background colour" htmlFor="bgColor">
             <ColorInput
               id="bgColor"
               value={settings.background}
@@ -274,7 +274,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
               onChange={(v) => set("background", v)}
             />
           </Field>
-          <Field label="Side margin" hint={`${settings.margin}%`} htmlFor="margin">
+          <Field label="Space around the page" hint={`${settings.margin}%`} htmlFor="margin">
             <Range
               id="margin"
               value={settings.margin}
@@ -287,7 +287,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
         </Row>
       </Group>
 
-      <Group title="Audio">
+      <Group title="Music">
         <button
           type="button"
           disabled={disabled}
@@ -299,14 +299,14 @@ export function Rail({ disabled }: { disabled: boolean }) {
             <circle cx="6" cy="18" r="3" />
             <circle cx="18" cy="16" r="3" />
           </svg>
-          <span className="truncate">{music ? music.name : "Add background music"}</span>
+          <span className="truncate">{music ? music.name : "Add music (optional)"}</span>
         </button>
         {/* Change is bound natively: see the note in Stage. */}
         <input ref={musicInput} type="file" accept="audio/*" className="sr-only" tabIndex={-1} />
 
         {music && (
           <>
-            <Field label="Volume" hint={`${Math.round(settings.musicVolume * 100)}%`} htmlFor="volume">
+            <Field label="Music volume" hint={`${Math.round(settings.musicVolume * 100)}%`} htmlFor="volume">
               <Range
                 id="volume"
                 value={Math.round(settings.musicVolume * 100)}
@@ -317,21 +317,21 @@ export function Rail({ disabled }: { disabled: boolean }) {
               />
             </Field>
             <Check id="fadeAudio" checked={settings.musicFade} disabled={disabled} onChange={(v) => set("musicFade", v)}>
-              Fade the music in and out
+              Fade music in at the start and out at the end
             </Check>
             <Check id="loopAudio" checked={settings.musicLoop} disabled={disabled} onChange={(v) => set("musicLoop", v)}>
-              Loop if the track is shorter than the video
+              Repeat the music if it is shorter than the video
             </Check>
           </>
         )}
 
         <Hint>
-          Use music you have the rights to. Copyrighted tracks can get a video claimed or muted.
+          Only use music you are allowed to use. Songs you do not own can get your video blocked or muted.
         </Hint>
       </Group>
 
-      <Group title="Branding">
-        <Field label="Opening title" htmlFor="titleText">
+      <Group title="Text and logo">
+        <Field label="Title at the start" htmlFor="titleText">
           <TextInput
             id="titleText"
             value={settings.title}
@@ -340,7 +340,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
             onChange={(v) => set("title", v)}
           />
         </Field>
-        <Field label="Subtitle" htmlFor="subtitleText">
+        <Field label="Smaller line under the title" htmlFor="subtitleText">
           <TextInput
             id="subtitleText"
             value={settings.subtitle}
@@ -349,7 +349,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
             onChange={(v) => set("subtitle", v)}
           />
         </Field>
-        <Field label="Closing card" htmlFor="outroText">
+        <Field label="Message at the end" htmlFor="outroText">
           <TextInput
             id="outroText"
             value={settings.outro}
@@ -360,7 +360,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
         </Field>
 
         <Row>
-          <Field label="Card length" hint={`${settings.cardSeconds.toFixed(1)}s`} htmlFor="cardSecs">
+          <Field label="How long the title shows" hint={`${settings.cardSeconds.toFixed(1)}s`} htmlFor="cardSecs">
             <Range
               id="cardSecs"
               value={settings.cardSeconds}
@@ -371,7 +371,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
               onChange={(v) => set("cardSeconds", v)}
             />
           </Field>
-          <Field label="Title colour" htmlFor="accentColor">
+          <Field label="Title text colour" htmlFor="accentColor">
             <ColorInput
               id="accentColor"
               value={settings.accent}
@@ -381,18 +381,18 @@ export function Rail({ disabled }: { disabled: boolean }) {
           </Field>
         </Row>
 
-        <Field label="Watermark" htmlFor="watermark">
+        <Field label="Your name in the corner" htmlFor="watermark">
           <TextInput
             id="watermark"
             value={settings.watermark}
-            placeholder="@YourChannel"
+            placeholder="@YourChannelName"
             disabled={disabled}
             onChange={(v) => set("watermark", v)}
           />
         </Field>
 
         <Check id="showCounter" checked={settings.showCounter} disabled={disabled} onChange={(v) => set("showCounter", v)}>
-          Show a page counter in the corner
+          Show page numbers (like &ldquo;Page 3 / 10&rdquo;)
         </Check>
         <Check
           id="showBar"
@@ -400,7 +400,7 @@ export function Rail({ disabled }: { disabled: boolean }) {
           disabled={disabled}
           onChange={(v) => set("showProgressBar", v)}
         >
-          Show a progress bar along the bottom
+          Show a progress bar at the bottom
         </Check>
       </Group>
     </div>

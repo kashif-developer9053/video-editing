@@ -40,7 +40,7 @@ export function Studio() {
   const setStats = useSetStats();
 
   const [status, setStatus] = useState<StageStatus>("idle");
-  const [statusText, setStatusText] = useState("Waiting for a PDF");
+  const [statusText, setStatusText] = useState("Choose a PDF to start");
   const [statusMeta, setStatusMeta] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<JobProgress | null>(null);
@@ -78,8 +78,8 @@ export function Studio() {
             return;
           }
           if (!res.ok) {
-            const body = await res.json().catch(() => ({ error: "Preview failed." }));
-            throw new Error(body.error ?? "Preview failed.");
+            const body = await res.json().catch(() => ({ error: "Could not show a preview." }));
+            throw new Error(body.error ?? "Could not show a preview.");
           }
           // A newer request has already started; drop this result.
           if (seq !== previewSeq.current) return;
@@ -101,7 +101,7 @@ export function Studio() {
           setError(null);
         } catch (err) {
           if (seq === previewSeq.current) {
-            setError(err instanceof Error ? err.message : "Preview failed.");
+            setError(err instanceof Error ? err.message : "Could not show a preview.");
           }
         }
       };
@@ -125,12 +125,12 @@ export function Studio() {
   const onFile = useCallback(
     async (file: File) => {
       if (!/pdf$/i.test(file.type) && !/\.pdf$/i.test(file.name)) {
-        setError("That file is not a PDF.");
+        setError("That is not a PDF file. Please choose a PDF.");
         return;
       }
 
       setStatus("loading");
-      setStatusText("Reading the PDF");
+      setStatusText("Opening your PDF");
       setStatusMeta(file.name);
       setError(null);
       setFinished(null);
@@ -144,8 +144,8 @@ export function Studio() {
       try {
         const res = await fetch("/api/preview", { method: "POST", body: form });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "Could not read that PDF." }));
-          throw new Error(body.error ?? "Could not read that PDF.");
+          const body = await res.json().catch(() => ({ error: "Could not read that PDF. It may be damaged or password protected." }));
+          throw new Error(body.error ?? "Could not read that PDF. It may be damaged or password protected.");
         }
         const pages = Number(res.headers.get("X-Scrollcast-Pages") ?? 1);
         setSource({ file, name: file.name, documentPages: pages });
@@ -155,9 +155,9 @@ export function Studio() {
         setStatusMeta(`${pages} pages`);
       } catch (err) {
         setStatus("error");
-        setStatusText("Could not open that PDF");
+        setStatusText("Could not open that file");
         setStatusMeta("");
-        setError(err instanceof Error ? err.message : "Could not read that PDF.");
+        setError(err instanceof Error ? err.message : "Could not read that PDF. It may be damaged or password protected.");
       }
     },
     [settings, setSource, setPreviewKey],
@@ -169,21 +169,21 @@ export function Studio() {
     const tick = async () => {
       try {
         const res = await fetch(`/api/render/${id}`);
-        if (!res.ok) throw new Error("The render was lost.");
+        if (!res.ok) throw new Error("Lost track of the video. Please try again.");
         const data = (await res.json()) as JobProgress & { result: Finished | null };
         setJob(data);
 
         if (data.status === "done" && data.result) {
           setFinished({ ...data.result, id });
           setStatus("ready");
-          setStatusText("Done");
+          setStatusText("Your video is ready");
           setStatusMeta(`${data.result.encoder}`);
           jobId.current = null;
           return;
         }
         if (data.status === "failed" || data.status === "cancelled") {
           setStatus(data.status === "failed" ? "error" : "ready");
-          setStatusText(data.status === "failed" ? "Render failed" : "Cancelled");
+          setStatusText(data.status === "failed" ? "Something went wrong" : "Stopped");
           setStatusMeta("");
           if (data.error) setError(data.error);
           jobId.current = null;
@@ -192,12 +192,12 @@ export function Studio() {
 
         setStatusText(data.message);
         setStatusMeta(
-          data.etaSeconds !== null ? `about ${formatShort(data.etaSeconds)} left` : "measuring",
+          data.etaSeconds !== null ? `about ${formatShort(data.etaSeconds)} left` : "working out how long",
         );
         setTimeout(tick, 500);
       } catch (err) {
         setStatus("error");
-        setError(err instanceof Error ? err.message : "The render was lost.");
+        setError(err instanceof Error ? err.message : "Lost track of the video. Please try again.");
         jobId.current = null;
       }
     };
@@ -208,7 +208,7 @@ export function Studio() {
     if (!source) return;
 
     setStatus("rendering");
-    setStatusText("Starting");
+    setStatusText("Getting ready");
     setStatusMeta("");
     setError(null);
     setFinished(null);
@@ -222,13 +222,13 @@ export function Studio() {
     try {
       const res = await fetch("/api/render", { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not start the render.");
+      if (!res.ok) throw new Error(data.error ?? "Could not start making the video.");
       jobId.current = data.id;
       poll(data.id);
     } catch (err) {
       setStatus("error");
       setStatusText("Could not start");
-      setError(err instanceof Error ? err.message : "Could not start the render.");
+      setError(err instanceof Error ? err.message : "Could not start making the video.");
     }
   }, [source, settings, music, poll]);
 
@@ -252,7 +252,7 @@ export function Studio() {
           </em>
         </div>
         <span className="rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] text-ok">
-          RENDERS ON THIS MACHINE
+          STAYS ON YOUR COMPUTER
         </span>
       </header>
 
@@ -267,8 +267,7 @@ export function Studio() {
           <div className="flex flex-none flex-col gap-2.5 border-t border-rule bg-panel px-[18px] py-4">
             {stats && !rendering && !finished && (
               <p className="text-center font-mono text-[11px] text-dim tabular-nums">
-                {stats.frames} frames · {stats.frames - stats.uniqueFrames} reused · about{" "}
-                {formatShort(stats.predictedSeconds)} to render
+                about {formatShort(stats.predictedSeconds)} to make
               </p>
             )}
 
@@ -282,7 +281,7 @@ export function Studio() {
                   : "border-accent bg-accent text-accentink hover:border-accenthi hover:bg-accenthi"
               }`}
             >
-              {rendering ? "Stop rendering" : finished ? "Render again" : "Render video"}
+              {rendering ? "Stop" : finished ? "Make it again" : "Make video"}
             </button>
 
             {rendering && (
@@ -294,10 +293,10 @@ export function Studio() {
                   />
                 </div>
                 <p className="text-center text-[11px] text-dim">
-                  {Math.round(progress * 100)}% ·{" "}
+                  {Math.round(progress * 100)}% done ·{" "}
                   {job?.etaSeconds !== null && job?.etaSeconds !== undefined
                     ? `about ${formatShort(job.etaSeconds)} left`
-                    : "measuring speed"}
+                    : "working out how long"}
                 </p>
               </>
             )}
@@ -311,7 +310,7 @@ export function Studio() {
             {finished && (
               <div className="flex flex-col gap-2.5 rounded-[5px] border border-ok/30 bg-ok/[0.06] p-2.5">
                 <p className="text-xs text-ok">
-                  Ready — {(finished.sizeBytes / 1048576).toFixed(1)} MB
+                  Video ready — {(finished.sizeBytes / 1048576).toFixed(1)} MB
                 </p>
                 <span className="font-mono text-[10.5px] text-muted tabular-nums">
                   {finished.width}×{finished.height} · {finished.frames} frames ·{" "}
@@ -324,10 +323,10 @@ export function Studio() {
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
                     <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z" />
                   </svg>
-                  Download video
+                  Save video
                 </a>
                 <p className="text-center text-[10.5px] text-dim">
-                  The file is deleted from this machine once you download it.
+                  The video is removed from your computer after you save it.
                 </p>
               </div>
             )}

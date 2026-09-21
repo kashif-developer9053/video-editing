@@ -95,8 +95,14 @@ export interface RasterPage {
   num: number;
   width: number;
   height: number;
-  /** Character count, used to weight per-page screen time. */
+  /** Character count, from the PDF's text layer. */
   chars: number;
+  /**
+   * Share of the page covered by anything at all — text, images, tables
+   * (0..1). Text characters alone cannot weight screen time: a full-page
+   * photograph has no characters and would otherwise be rushed past.
+   */
+  coverage: number;
   /**
    * Where the page's content actually ends, as a fraction of its height
    * (0..1). A page with text only in the top third reports ~0.35, so panning

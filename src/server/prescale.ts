@@ -14,6 +14,7 @@
  * single size to pre-scale to, and they keep the original bitmap.
  */
 
+import { pageScale } from "@/engine/compositor";
 import { drawnPageWidth, outputSize } from "@/engine/layout";
 import type { DrawablePage, Settings } from "@/engine/types";
 import { createCanvas } from "./canvas";
@@ -88,23 +89,20 @@ function drawRatio(
   targetWidth: number,
   settings: Settings,
 ): number {
-  const byWidth = page.width / targetWidth;
-
-  const scrolling = settings.mode === "scroll" || settings.mode === "autopace";
-  if (scrolling || settings.fit === "width") {
-    // A scrolling strip and a fill-width page are both sized by width; their
-    // height follows, and the part past the frame is simply off screen.
-    return byWidth;
-  }
-
   const out = outputSize(settings);
   const pad = Math.round(out.width * (settings.margin / 100));
-  const drawnHeight = Math.min(
-    page.height * (targetWidth / page.width),
-    out.height - pad * 2,
-  );
-  const byHeight = page.height / Math.max(1, drawnHeight);
 
-  // Never shrink past what the width needs, or the page turns soft.
-  return Math.min(byWidth, byHeight);
+  const scrolling = settings.mode === "scroll" || settings.mode === "autopace";
+  if (scrolling) {
+    // A scrolling strip is sized by width; its height follows, and whatever
+    // runs past the frame is simply off screen.
+    return page.width / targetWidth;
+  }
+
+  // Ask the compositor what scale it will actually draw at, rather than
+  // assuming. pageScale caps a tall page so it cannot exceed a fixed number
+  // of frame heights, and prescaling past that cap leaves the page drawn
+  // smaller than its bitmap — which is the blur this module exists to avoid.
+  const scale = pageScale(page, out, pad, settings.fit);
+  return 1 / Math.max(scale, Number.EPSILON);
 }
