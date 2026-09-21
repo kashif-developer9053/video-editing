@@ -92,9 +92,13 @@ export function Stage({
   }, []);
 
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <div className={`flex flex-col gap-3 ${source ? "lg:h-full lg:min-h-0" : ""}`}>
       <div
-        className="relative flex min-h-[220px] items-center justify-center overflow-hidden rounded-xl border border-rule bg-stage p-3 sm:min-h-[340px] lg:min-h-0 lg:flex-1"
+        className={`relative flex items-center justify-center overflow-hidden rounded-xl border border-rule bg-stage p-3 ${
+          source
+            ? "min-h-[220px] sm:min-h-[340px] lg:min-h-0 lg:flex-1"
+            : "aspect-[4/3] sm:aspect-[16/10]"
+        }`}
         onDragEnter={(e) => {
           e.preventDefault();
           setDragging(true);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatShort } from "@/engine/layout";
 import { PLATFORMS, type MotionMode, type PlatformKey } from "@/engine/types";
 import {
@@ -58,14 +58,22 @@ export function Rail({ disabled }: { disabled: boolean }) {
   const setMusic = useSetMusic();
   const musicInput = useRef<HTMLInputElement>(null);
 
-  // Native listener rather than onChange: React's synthetic change does not
-  // reach these inputs reliably here.
+  // Keep the latest setter in a ref so the listener below binds once.
+  const setMusicRef = useRef(setMusic);
   useEffect(() => {
-    const el = musicInput.current;
+    setMusicRef.current = setMusic;
+  }, [setMusic]);
+
+  // Bound through a ref callback, not an effect: this input only exists once
+  // the music panel is open, so an effect that runs on mount finds nothing
+  // to attach to and picking a song silently does nothing. Native rather
+  // than onChange because React's synthetic change does not reach it here.
+  const bindMusicInput = useCallback((el: HTMLInputElement | null) => {
+    musicInput.current = el;
     if (!el || el.dataset.bound === "1") return;
     el.dataset.bound = "1";
-    el.addEventListener("change", () => setMusic(el.files?.[0] ?? null));
-  }, [setMusic]);
+    el.addEventListener("change", () => setMusicRef.current(el.files?.[0] ?? null));
+  }, []);
 
   const maxPage = source?.documentPages ?? 1;
   const platform = PLATFORMS[settings.platform];
@@ -175,26 +183,36 @@ export function Rail({ disabled }: { disabled: boolean }) {
         <h2 className="px-1 text-sm font-semibold text-ink">3. Optional extras</h2>
 
         <Disclosure title="Add music" summary={music ? music.name : "No music yet"}>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => musicInput.current?.click()}
-            className="flex min-h-12 items-center justify-center gap-2.5 rounded-lg border border-dashed border-rule bg-panel2 px-3 text-sm text-muted transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden
-              className="h-4 w-4 shrink-0 fill-none stroke-current stroke-[1.6]"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {music ? (
+            <MusicChosen
+              key={`${music.name}:${music.size}:${music.lastModified}`}
+              file={music}
+              disabled={disabled}
+              onReplace={() => musicInput.current?.click()}
+              onRemove={() => setMusic(null)}
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => musicInput.current?.click()}
+              className="flex min-h-12 items-center justify-center gap-2.5 rounded-lg border border-dashed border-rule bg-panel2 px-3 text-sm text-muted transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
             >
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" />
-              <circle cx="18" cy="16" r="3" />
-            </svg>
-            <span className="truncate">{music ? "Choose a different song" : "Choose a song"}</span>
-          </button>
-          <input ref={musicInput} type="file" accept="audio/*" className="sr-only" tabIndex={-1} />
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden
+                className="h-4 w-4 shrink-0 fill-none stroke-current stroke-[1.6]"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+              <span className="truncate">Choose a song</span>
+            </button>
+          )}
+          <input ref={bindMusicInput} type="file" accept="audio/*" className="sr-only" tabIndex={-1} />
 
           {music ? (
             <>
@@ -411,6 +429,106 @@ export function Rail({ disabled }: { disabled: boolean }) {
           </Field>
         </Disclosure>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Confirmation that a song is actually attached.
+ *
+ * Picking a file used to change nothing visible while the panel was open —
+ * the name only appeared on the collapsed header — so there was no way to
+ * tell whether the choice had taken. This shows the name, how big it is and
+ * how long it runs, and lets it be played or removed.
+ */
+function MusicChosen({
+  file,
+  disabled,
+  onReplace,
+  onRemove,
+}: {
+  file: File;
+  disabled: boolean;
+  onReplace: () => void;
+  onRemove: () => void;
+}) {
+  const [duration, setDuration] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const url = useMemo(() => URL.createObjectURL(file), [file]);
+
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  const toggle = () => {
+    const el = audio.current;
+    if (!el) return;
+    if (el.paused) {
+      void el.play();
+      setPlaying(true);
+    } else {
+      el.pause();
+      setPlaying(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-ok/30 bg-ok/[0.06] p-3">
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={playing ? "Stop the song" : "Hear the song"}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ok/15 transition-colors hover:bg-ok/25"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden className="h-4 w-4 fill-ok">
+            {playing ? <path d="M6 5h4v14H6zM14 5h4v14h-4z" /> : <path d="M8 5v14l11-7z" />}
+          </svg>
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-ok">
+            <svg viewBox="0 0 24 24" aria-hidden className="h-3.5 w-3.5 shrink-0 fill-none stroke-current stroke-[2.5]" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m5 13 4 4L19 7" />
+            </svg>
+            Music added
+          </p>
+          <p className="mt-0.5 truncate text-sm text-ink" title={file.name}>
+            {file.name}
+          </p>
+          <p className="mt-0.5 font-mono text-xs text-dim tabular-nums">
+            {(file.size / 1048576).toFixed(1)} MB
+            {duration != null ? ` · ${formatShort(duration)}` : ""}
+          </p>
+        </div>
+      </div>
+
+      <audio
+        ref={audio}
+        src={url}
+        preload="metadata"
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onEnded={() => setPlaying(false)}
+        className="sr-only"
+      />
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onReplace}
+          className="min-h-11 flex-1 rounded-lg border border-rule bg-panel2 text-sm transition-colors hover:border-rulehi disabled:opacity-40"
+        >
+          Change song
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+          className="min-h-11 rounded-lg border border-rule bg-panel2 px-4 text-sm text-muted transition-colors hover:border-rec/50 hover:text-rec disabled:opacity-40"
+        >
+          Remove
+        </button>
+      </div>
     </div>
   );
 }

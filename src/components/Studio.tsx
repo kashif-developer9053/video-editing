@@ -14,6 +14,7 @@ import {
   useStats,
   useTime,
 } from "@/store/settings";
+import { Landing } from "./Landing";
 import { Rail } from "./Rail";
 import { Stage, type StageStatus } from "./Stage";
 
@@ -250,9 +251,25 @@ export function Studio() {
         </span>
       </header>
 
-      {/* One column on a phone, side by side once there is room. */}
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 pt-4 pb-32 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
-        <div className="lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-13rem)] lg:flex-col">
+      {/*
+        One column on a phone, side by side once there is room. Before a file
+        is chosen the columns swap weight: the explanation leads and the drop
+        zone sits beside it, rather than a big empty box dominating the page.
+      */}
+      <main
+        className={`mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 pt-4 lg:grid lg:items-start ${
+          source
+            ? "pb-32 lg:grid-cols-[minmax(0,1fr)_380px]"
+            : "gap-8 pb-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10"
+        }`}
+      >
+        <div
+          className={
+            source
+              ? "lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-13rem)] lg:flex-col"
+              : "lg:order-2 lg:sticky lg:top-4 lg:self-start"
+          }
+        >
           <Stage
             status={status}
             statusText={statusText}
@@ -266,27 +283,7 @@ export function Studio() {
             <Rail disabled={rendering} />
           </div>
         ) : (
-          <aside className="rounded-xl border border-rule bg-panel p-4">
-            <h2 className="text-sm font-semibold text-ink">How it works</h2>
-            <ol className="mt-3 flex flex-col gap-3 text-sm text-muted">
-              {[
-                "Choose a PDF from your device.",
-                "Pick a style and where you will post it.",
-                "Press Make video, then save the file.",
-              ].map((step, i) => (
-                <li key={step} className="flex gap-3">
-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-semibold text-accent">
-                    {i + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-4 text-xs leading-relaxed text-dim">
-              Your PDF is turned into a video on this computer. Nothing is uploaded to the
-              internet, and the video is removed once you save it.
-            </p>
-          </aside>
+          <Landing />
         )}
       </main>
 
