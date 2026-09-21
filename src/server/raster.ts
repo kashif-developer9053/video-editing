@@ -137,11 +137,43 @@ function cMapFactory(dir: string) {
  * Node without a DOM. Loaded lazily so importing this module in a client
  * bundle does not drag it in.
  */
-async function loadPdfjs() {
+let pdfjsPromise: ReturnType<typeof importPdfjs> | null = null;
+
+async function importPdfjs() {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
   // No worker under Node: the main thread does the parsing.
   pdfjs.GlobalWorkerOptions.workerSrc = "";
   return pdfjs;
+}
+
+/**
+ * Load pdfjs once per process.
+ *
+ * Without this the first page of every render paid pdfjs's start-up cost:
+ * measured at 3.4 seconds against 40-60ms for each page after it. The module
+ * is stateless once loaded, so one copy serves every request.
+ */
+function loadPdfjs() {
+  if (!pdfjsPromise) pdfjsPromise = importPdfjs();
+  return pdfjsPromise;
+}
+
+/**
+ * Start loading pdfjs and its fonts before anyone asks for a render, so the
+ * cost lands while the user is still choosing settings rather than on their
+ * first page.
+ */
+export async function warmUp(): Promise<void> {
+  try {
+    await loadPdfjs();
+    assetDirs();
+    // node-canvas sets up its font subsystem on the first createCanvas,
+    // which measured 1.6 seconds. Paying it here keeps it off the first
+    // page of the first render.
+    createCanvas(8, 8).getContext("2d").fillRect(0, 0, 1, 1);
+  } catch {
+    // A failure here is not fatal: the real render reports it properly.
+  }
 }
 
 export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
@@ -230,32 +262,37 @@ function measureInk(
 ): { contentBottom: number; coverage: number } {
   const INK_THRESHOLD = 246; // darker than near-white counts as content
   const MIN_INK_PIXELS = 3; // ignore specks and compression noise
-  const step = Math.max(1, Math.floor(width / 320));
+  const colStep = Math.max(1, Math.floor(width / 320));
   const rowStep = Math.max(1, Math.floor(height / 320));
+
+  let data: Uint8ClampedArray;
+  try {
+    // One read for the whole page: a getImageData per row costs a call into
+    // the native canvas for every row scanned.
+    data = ctx.getImageData(0, 0, width, height).data;
+  } catch {
+    // If the pixels cannot be read, assume a full page of average density.
+    return { contentBottom: 1, coverage: 0.25 };
+  }
 
   let lastInkRow = -1;
   let inkSamples = 0;
   let totalSamples = 0;
 
-  try {
-    for (let y = 0; y < height; y += rowStep) {
-      const row = ctx.getImageData(0, y, width, 1).data;
-      let rowInk = 0;
-      for (let x = 0; x < width; x += step) {
-        const i = x * 4;
-        totalSamples++;
-        // Alpha 0 is untouched background, which is not ink.
-        if (row[i + 3] === 0) continue;
-        if (row[i] < INK_THRESHOLD || row[i + 1] < INK_THRESHOLD || row[i + 2] < INK_THRESHOLD) {
-          rowInk++;
-          inkSamples++;
-        }
+  for (let y = 0; y < height; y += rowStep) {
+    const rowStart = y * width * 4;
+    let rowInk = 0;
+    for (let x = 0; x < width; x += colStep) {
+      const i = rowStart + x * 4;
+      totalSamples++;
+      // Alpha 0 is untouched background, which is not ink.
+      if (data[i + 3] === 0) continue;
+      if (data[i] < INK_THRESHOLD || data[i + 1] < INK_THRESHOLD || data[i + 2] < INK_THRESHOLD) {
+        rowInk++;
+        inkSamples++;
       }
-      if (rowInk >= MIN_INK_PIXELS) lastInkRow = y;
     }
-  } catch {
-    // If the pixels cannot be read, assume a full page of average density.
-    return { contentBottom: 1, coverage: 0.25 };
+    if (rowInk >= MIN_INK_PIXELS) lastInkRow = y;
   }
 
   const contentBottom =
@@ -264,8 +301,7 @@ function measureInk(
       : // Leave a little breathing room below the last line.
         Math.min(1, (lastInkRow + height * 0.02) / height);
 
-  const coverage = totalSamples > 0 ? inkSamples / totalSamples : 0;
-  return { contentBottom, coverage };
+  return { contentBottom, coverage: totalSamples > 0 ? inkSamples / totalSamples : 0 };
 }
 
 /** Text volume for auto-pace weighting. Failure just means even pacing. */

@@ -19,7 +19,6 @@ import { predictSeconds } from "@/engine/estimate";
 import { DEFAULT_SETTINGS, type DrawablePage, type Settings } from "@/engine/types";
 import { createCanvas } from "@/server/canvas";
 import { detectEncoder } from "@/server/ffmpeg";
-import { prescalePages } from "@/server/prescale";
 import { rasterizePdf, releasePages } from "@/server/raster";
 
 export const runtime = "nodejs";
@@ -91,9 +90,11 @@ export async function POST(request: Request) {
         pageTo: settings.pageTo,
         outputWidth: drawnPageWidth(settings),
       });
-      // Exactly what the renderer does, so the preview cannot drift from
-      // the finished video.
-      prescalePages(result.pages, settings);
+      // Deliberately NOT prescaled. Prescaling costs about 600ms and saves
+      // ~170ms on every frame drawn, which is a huge win across a whole
+      // render but pure delay for a preview that draws one frame. The
+      // compositor scales identically either way, so the picture is the
+      // same; only the sharpness of the downscale differs, invisibly.
       entry = {
         pages: result.pages,
         documentPages: result.documentPages,
