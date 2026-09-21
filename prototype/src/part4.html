@@ -1,0 +1,135 @@
+
+      <div class="group">
+        <h3>Format</h3>
+        <div class="field">
+          <label>Platform</label>
+          <div class="plats" id="plats">
+            <button class="plat" data-ar="16:9" aria-pressed="true">YouTube <i>16:9</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">Shorts <i>9:16</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">TikTok <i>9:16</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">Reels <i>9:16</i></button>
+            <button class="plat" data-ar="1:1" aria-pressed="false">Facebook <i>1:1</i></button>
+            <button class="plat" data-ar="4:5" aria-pressed="false">Instagram <i>4:5</i></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="quality">Resolution</label>
+            <select id="quality">
+              <option value="720">720p</option>
+              <option value="1080" selected>1080p</option>
+              <option value="1440">1440p</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fps">Frame rate</label>
+            <select id="fps">
+              <option value="24">24 fps</option>
+              <option value="30" selected>30 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fit">Page fit</label>
+          <select id="fit">
+            <option value="width" selected>Fill the width</option>
+            <option value="contain">Fit the whole page</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="bgColor">Backdrop</label>
+            <input type="color" id="bgColor" value="#0F1115">
+          </div>
+          <div class="field">
+            <label for="margin">Side margin <b id="marginLabel">4%</b></label>
+            <input type="range" id="margin" min="0" max="20" value="4" step="1">
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Audio</h3>
+        <label class="filebtn" for="musicInput">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span id="musicName">Add background music</span>
+        </label>
+        <input type="file" id="musicInput" accept="audio/*" hidden>
+        <div class="field">
+          <label for="volume">Volume <b id="volLabel">60%</b></label>
+          <input type="range" id="volume" min="0" max="100" value="60" step="1">
+        </div>
+        <label class="check" for="fadeAudio">
+          <input type="checkbox" id="fadeAudio" checked>
+          Fade the music in and out
+        </label>
+        <label class="check" for="loopAudio">
+          <input type="checkbox" id="loopAudio" checked>
+          Loop if the track is shorter than the video
+        </label>
+        <p class="hint">Use music you have the rights to. Copyrighted tracks can get a video claimed or muted on YouTube.</p>
+      </div>
+
+      <div class="group">
+        <h3>Branding</h3>
+        <div class="field">
+          <label for="titleText">Opening title <span style="color:var(--dim)">optional</span></label>
+          <input type="text" id="titleText" placeholder="e.g. Code 413 — Assignment 1">
+        </div>
+        <div class="field">
+          <label for="subtitleText">Subtitle</label>
+          <input type="text" id="subtitleText" placeholder="e.g. Spring 2026 · BA &amp; AD">
+        </div>
+        <div class="field">
+          <label for="outroText">Closing card</label>
+          <input type="text" id="outroText" placeholder="e.g. Subscribe for more solved assignments">
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="cardSecs">Card length <b id="cardLabel">3.0s</b></label>
+            <input type="range" id="cardSecs" min="1" max="8" value="3" step="0.5">
+          </div>
+          <div class="field">
+            <label for="accentColor">Title colour</label>
+            <input type="color" id="accentColor" value="#F0A830">
+          </div>
+        </div>
+        <div class="field">
+          <label for="watermark">Watermark</label>
+          <input type="text" id="watermark" placeholder="e.g. @YourChannel">
+        </div>
+        <label class="check" for="showCounter">
+          <input type="checkbox" id="showCounter" checked>
+          Show a page counter in the corner
+        </label>
+        <label class="check" for="showBar">
+          <input type="checkbox" id="showBar" checked>
+          Show a progress bar along the bottom
+        </label>
+      </div>
+
+      <div class="export">
+        <button class="btn primary" id="renderBtn" disabled>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>
+          <span id="renderLabel">Render video</span>
+        </button>
+        <div class="prog" id="progWrap" hidden><i id="progBar"></i></div>
+        <p class="note" id="renderNote">Load a PDF to begin.</p>
+
+        <div class="result" id="result" hidden>
+          <p id="resultText">Video ready.</p>
+          <video id="resultVideo" controls playsinline></video>
+          <span class="tcs" id="resultMeta"></span>
+          <button class="btn" id="downloadBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
+            Download video
+          </button>
+          <button class="btn" id="chaptersBtn" hidden>Show YouTube chapters</button>
+          <div class="chapters" id="chapters" hidden></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

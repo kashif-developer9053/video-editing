@@ -1,0 +1,1309 @@
+<title>Scrollcast Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    color-scheme: dark;
+    --ground:#0D0F14; --panel:#161A22; --panel-2:#1C212B; --rule:#252B36;
+    --text:#E8EAEF; --muted:#8A93A6; --dim:#5E6779;
+    --accent:#F0A830; --accent-dim:#8A6320; --ok:#4ADE80; --rec:#F05050;
+    --stage:#07080B;
+    --ui:"Inter",system-ui,-apple-system,sans-serif;
+    --disp:"Barlow Condensed",var(--ui);
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--text);
+    font-family:var(--ui); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea{font:inherit;color:inherit}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--rule);border-radius:9px}
+  ::-webkit-scrollbar-thumb:hover{background:#333B49}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---------- shell ---------- */
+  .app{display:flex;flex-direction:column;height:100%;min-height:0}
+  .topbar{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:10px 18px; padding-top:calc(10px + env(safe-area-inset-top,0px));
+    background:var(--panel); border-bottom:1px solid var(--rule); flex:none;
+  }
+  .brand{display:flex;align-items:baseline;gap:9px;margin-right:auto}
+  .brand h1{
+    font-family:var(--disp); font-weight:700; font-size:21px; margin:0;
+    letter-spacing:.055em; text-transform:uppercase;
+  }
+  .brand h1 span{color:var(--accent)}
+  .brand em{font-style:normal;font-size:11px;color:var(--dim);letter-spacing:.09em;text-transform:uppercase}
+  .free-tag{
+    font-family:var(--mono);font-size:10px;color:var(--ok);
+    border:1px solid rgba(74,222,128,.32);background:rgba(74,222,128,.08);
+    padding:3px 8px;border-radius:999px;letter-spacing:.06em;
+  }
+
+  .main{display:grid;grid-template-columns:minmax(0,1fr) 352px;flex:1;min-height:0}
+
+  /* ---------- stage ---------- */
+  .stage-wrap{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--stage)}
+  .stage{
+    flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+    padding:22px;position:relative;
+    background-image:radial-gradient(circle at 50% 40%, #12151C 0%, #07080B 72%);
+  }
+  #preview{
+    max-width:100%;max-height:100%;display:block;border-radius:2px;
+    box-shadow:0 0 0 1px var(--rule), 0 26px 70px rgba(0,0,0,.72);
+    background:#000;
+  }
+  .drop{
+    position:absolute;inset:22px;border:1.5px dashed var(--rule);border-radius:6px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;text-align:center;padding:24px;transition:border-color .15s,background .15s;
+  }
+  .drop.hot{border-color:var(--accent);background:rgba(240,168,48,.05)}
+  .drop svg{width:42px;height:42px;stroke:var(--dim);fill:none;stroke-width:1.4}
+  .drop h2{font-family:var(--disp);font-size:24px;font-weight:600;margin:0;letter-spacing:.03em;text-transform:uppercase}
+  .drop p{margin:0;color:var(--muted);max-width:42ch;font-size:13px}
+  .drop small{color:var(--dim);font-size:11px;font-family:var(--mono)}
+
+  /* ---------- transport ---------- */
+  .transport{
+    flex:none;border-top:1px solid var(--rule);background:var(--panel);
+    padding:11px 18px;display:flex;flex-direction:column;gap:9px;
+  }
+  .scrub{display:flex;align-items:center;gap:13px}
+  .play{
+    width:38px;height:38px;flex:none;border-radius:50%;border:1px solid var(--rule);
+    background:var(--panel-2);display:grid;place-items:center;cursor:pointer;transition:.15s;
+  }
+  .play:hover:not(:disabled){border-color:var(--accent);background:#222835}
+  .play:disabled{opacity:.34;cursor:not-allowed}
+  .play svg{width:15px;height:15px;fill:var(--text)}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;background:transparent;flex:1;min-width:0;height:18px;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--rule);border-radius:3px}
+  input[type=range]::-moz-range-track{height:3px;background:var(--rule);border-radius:3px}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);
+    margin-top:-5px;border:2px solid var(--panel);
+  }
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid var(--panel);border-radius:50%;background:var(--accent)}
+  input[type=range]:disabled{opacity:.36}
+  .tc{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tc b{color:var(--text);font-weight:500}
+  .statusline{
+    display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--dim);
+    font-family:var(--mono);flex-wrap:wrap;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.ready{background:var(--ok);box-shadow:0 0 7px rgba(74,222,128,.55)}
+  .dot.rec{background:var(--rec);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.dot.rec{animation:none}}
+
+  /* ---------- rail ---------- */
+  .rail{
+    background:var(--panel);border-left:1px solid var(--rule);
+    overflow-y:auto;min-height:0;display:flex;flex-direction:column;
+  }
+  .group{border-bottom:1px solid var(--rule);padding:15px 18px;display:flex;flex-direction:column;gap:12px}
+  .group > h3{
+    font-family:var(--disp);font-size:12px;font-weight:600;margin:0;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+    display:flex;align-items:center;gap:8px;
+  }
+  .group > h3::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field > label{font-size:11.5px;color:var(--muted);letter-spacing:.02em;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .field > label b{font-family:var(--mono);color:var(--accent);font-weight:500;font-variant-numeric:tabular-nums}
+  select,input[type=text],input[type=number]{
+    width:100%;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;
+    padding:8px 9px;font-size:13px;transition:border-color .15s;
+  }
+  select:hover,input[type=text]:hover,input[type=number]:hover{border-color:#333B49}
+  select:focus,input[type=text]:focus,input[type=number]:focus{border-color:var(--accent);outline:none}
+  input[type=color]{
+    width:100%;height:32px;padding:2px;background:var(--panel-2);
+    border:1px solid var(--rule);border-radius:4px;cursor:pointer;
+  }
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+
+  /* segmented */
+  .seg{display:flex;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;padding:2px;gap:2px}
+  .seg button{
+    flex:1;background:transparent;border:0;border-radius:3px;padding:6px 4px;
+    font-size:11.5px;cursor:pointer;color:var(--muted);transition:.14s;white-space:nowrap;
+  }
+  .seg button:hover{color:var(--text)}
+  .seg button[aria-pressed=true]{background:var(--accent);color:#1A1204;font-weight:600}
+
+  /* mode cards */
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mode{
+    background:var(--panel-2);border:1px solid var(--rule);border-radius:5px;
+    padding:9px;cursor:pointer;text-align:left;transition:.14s;display:flex;flex-direction:column;gap:5px;
+  }
+  .mode:hover{border-color:#39414F}
+  .mode[aria-pressed=true]{border-color:var(--accent);background:rgba(240,168,48,.09)}
+  .mode strong{font-size:12px;font-weight:600;display:block}
+  .mode[aria-pressed=true] strong{color:var(--accent)}
+  .mode span{font-size:10.5px;color:var(--dim);line-height:1.35}
+  .mode svg{width:100%;height:22px;stroke:var(--muted);fill:none;stroke-width:1.5}
+  .mode[aria-pressed=true] svg{stroke:var(--accent)}
+
+  /* platform chips */
+  .plats{display:flex;flex-wrap:wrap;gap:6px}
+  .plat{
+    background:var(--panel-2);border:1px solid var(--rule);border-radius:999px;
+    padding:5px 11px;font-size:11.5px;cursor:pointer;color:var(--muted);transition:.14s;
+    display:flex;align-items:center;gap:6px;
+  }
+  .plat:hover{border-color:#39414F;color:var(--text)}
+  .plat[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:rgba(240,168,48,.1)}
+  .plat i{font-family:var(--mono);font-style:normal;font-size:9.5px;color:var(--dim)}
+  .plat[aria-pressed=true] i{color:var(--accent-dim)}
+
+  .check{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none}
+  .check input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;flex:none}
+  .check:hover{color:var(--text)}
+
+  .filebtn{
+    display:flex;align-items:center;gap:9px;background:var(--panel-2);border:1px dashed var(--rule);
+    border-radius:4px;padding:9px;cursor:pointer;font-size:12px;color:var(--muted);transition:.14s;
+  }
+  .filebtn:hover{border-color:var(--accent);color:var(--text)}
+  .filebtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;flex:none}
+  .filebtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .hint{font-size:11px;color:var(--dim);line-height:1.45;margin:0}
+
+  /* export */
+  .export{padding:15px 18px;padding-bottom:calc(15px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:9px;margin-top:auto}
+  .btn{
+    width:100%;padding:11px;border-radius:5px;border:1px solid var(--rule);background:var(--panel-2);
+    cursor:pointer;font-size:13px;font-weight:500;transition:.14s;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  .btn:hover:not(:disabled){border-color:#39414F;background:#222835}
+  .btn:disabled{opacity:.36;cursor:not-allowed}
+  .btn svg{width:14px;height:14px;fill:currentColor}
+  .btn.primary{
+    background:var(--accent);color:#1A1204;border-color:var(--accent);font-weight:600;
+    font-family:var(--disp);font-size:15px;letter-spacing:.07em;text-transform:uppercase;padding:12px;
+  }
+  .btn.primary:hover:not(:disabled){background:#FFBB45;border-color:#FFBB45}
+  .btn.stop{background:var(--rec);border-color:var(--rec);color:#fff;font-weight:600}
+
+  .prog{height:3px;background:var(--rule);border-radius:3px;overflow:hidden}
+  .prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+  .note{font-size:11px;color:var(--dim);text-align:center;line-height:1.45}
+  .note.warn{color:var(--accent)}
+
+  .result{
+    border:1px solid rgba(74,222,128,.3);background:rgba(74,222,128,.06);
+    border-radius:5px;padding:11px;display:flex;flex-direction:column;gap:9px;
+  }
+  .result p{margin:0;font-size:12px;color:var(--ok)}
+  .result .tcs{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  #resultVideo{width:100%;border-radius:4px;background:#000;display:block}
+
+  .chapters{
+    background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;
+    padding:9px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+    max-height:112px;overflow:auto;white-space:pre;line-height:1.6;
+  }
+
+  @media (max-width:900px){
+    .main{grid-template-columns:1fr;grid-template-rows:minmax(230px,42vh) 1fr}
+    .rail{border-left:0;border-top:1px solid var(--rule)}
+    body{font-size:13.5px}
+  }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Scroll<span>cast</span></h1>
+      <em>PDF &rarr; Video</em>
+    </div>
+    <span class="free-tag">100% LOCAL &middot; NO UPLOAD</span>
+  </div>
+
+  <div class="main">
+    <!-- ============ STAGE ============ -->
+    <div class="stage-wrap">
+      <div class="stage">
+        <canvas id="preview" width="1280" height="720"></canvas>
+        <div class="drop" id="drop">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+          </svg>
+          <h2>Drop a PDF</h2>
+          <p>Your file is rendered here in your browser and never leaves your computer. Nothing is uploaded to any server.</p>
+          <small>Click anywhere in this area to browse</small>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="scrub">
+          <button class="play" id="playBtn" disabled aria-label="Play preview">
+            <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <input type="range" id="scrub" min="0" max="1000" value="0" step="1" disabled aria-label="Scrub timeline">
+          <span class="tc"><b id="tcNow">00:00:00</b> / <span id="tcTotal">00:00:00</span></span>
+        </div>
+        <div class="statusline">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">Waiting for a PDF</span>
+          <span id="statusMeta"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RAIL ============ -->
+    <div class="rail">
+
+      <div class="group">
+        <h3>Source</h3>
+        <label class="filebtn" for="pdfInput">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span id="pdfName">Choose a PDF file</span>
+        </label>
+        <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
+        <div class="row">
+          <div class="field">
+            <label for="pageFrom">First page</label>
+            <input type="number" id="pageFrom" min="1" value="1" disabled>
+          </div>
+          <div class="field">
+            <label for="pageTo">Last page</label>
+            <input type="number" id="pageTo" min="1" value="1" disabled>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Motion</h3>
+        <div class="modes" id="modes">
+          <button class="mode" data-mode="scroll" aria-pressed="true">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><path d="M8 4h44M8 11h44M8 18h30"/><path d="M4 2v18" stroke-dasharray="2 3"/></svg>
+            <strong>Continuous</strong>
+            <span>One long strip, scrolls top to bottom without stopping</span>
+          </button>
+          <button class="mode" data-mode="slide" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><rect x="3" y="3" width="24" height="16" rx="2"/><rect x="33" y="3" width="24" height="16" rx="2"/></svg>
+            <strong>Slide</strong>
+            <span>Holds each page, then cuts or fades to the next</span>
+          </button>
+          <button class="mode" data-mode="kenburns" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><rect x="3" y="3" width="54" height="16" rx="2"/><rect x="18" y="7" width="24" height="9" rx="1" stroke-dasharray="3 2"/></svg>
+            <strong>Slow zoom</strong>
+            <span>Holds each page with a gentle drift and zoom</span>
+          </button>
+          <button class="mode" data-mode="autopace" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><path d="M8 5h44M8 11h30M8 17h44"/><circle cx="52" cy="11" r="2.5"/></svg>
+            <strong>Auto pace</strong>
+            <span>Scrolls, but slows down on pages with more text</span>
+          </button>
+        </div>
+
+        <div class="field">
+          <label for="duration">Video length <b id="durLabel">3:00</b></label>
+          <input type="range" id="duration" min="10" max="1800" value="180" step="5">
+        </div>
+
+        <div class="field" id="transitionField" hidden>
+          <label for="transition">Between pages</label>
+          <select id="transition">
+            <option value="cut">Hard cut</option>
+            <option value="fade" selected>Cross fade</option>
+            <option value="push">Push up</option>
+            <option value="slide">Slide across</option>
+          </select>
+        </div>
+
+        <label class="check" for="easeEnds">
+          <input type="checkbox" id="easeEnds" checked>
+          Ease in and out at the start and end
+        </label>
+      </div>
+
+      <div class="group">
+        <h3>Format</h3>
+        <div class="field">
+          <label>Platform</label>
+          <div class="plats" id="plats">
+            <button class="plat" data-ar="16:9" aria-pressed="true">YouTube <i>16:9</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">Shorts <i>9:16</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">TikTok <i>9:16</i></button>
+            <button class="plat" data-ar="9:16" aria-pressed="false">Reels <i>9:16</i></button>
+            <button class="plat" data-ar="1:1" aria-pressed="false">Facebook <i>1:1</i></button>
+            <button class="plat" data-ar="4:5" aria-pressed="false">Instagram <i>4:5</i></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="quality">Resolution</label>
+            <select id="quality">
+              <option value="720">720p</option>
+              <option value="1080" selected>1080p</option>
+              <option value="1440">1440p</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fps">Frame rate</label>
+            <select id="fps">
+              <option value="24">24 fps</option>
+              <option value="30" selected>30 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fit">Page fit</label>
+          <select id="fit">
+            <option value="width" selected>Fill the width</option>
+            <option value="contain">Fit the whole page</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="bgColor">Backdrop</label>
+            <input type="color" id="bgColor" value="#0F1115">
+          </div>
+          <div class="field">
+            <label for="margin">Side margin <b id="marginLabel">4%</b></label>
+            <input type="range" id="margin" min="0" max="20" value="4" step="1">
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Audio</h3>
+        <label class="filebtn" for="musicInput">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span id="musicName">Add background music</span>
+        </label>
+        <input type="file" id="musicInput" accept="audio/*" hidden>
+        <div class="field">
+          <label for="volume">Volume <b id="volLabel">60%</b></label>
+          <input type="range" id="volume" min="0" max="100" value="60" step="1">
+        </div>
+        <label class="check" for="fadeAudio">
+          <input type="checkbox" id="fadeAudio" checked>
+          Fade the music in and out
+        </label>
+        <label class="check" for="loopAudio">
+          <input type="checkbox" id="loopAudio" checked>
+          Loop if the track is shorter than the video
+        </label>
+        <p class="hint">Use music you have the rights to. Copyrighted tracks can get a video claimed or muted on YouTube.</p>
+      </div>
+
+      <div class="group">
+        <h3>Branding</h3>
+        <div class="field">
+          <label for="titleText">Opening title <span style="color:var(--dim)">optional</span></label>
+          <input type="text" id="titleText" placeholder="e.g. Code 413 — Assignment 1">
+        </div>
+        <div class="field">
+          <label for="subtitleText">Subtitle</label>
+          <input type="text" id="subtitleText" placeholder="e.g. Spring 2026 · BA &amp; AD">
+        </div>
+        <div class="field">
+          <label for="outroText">Closing card</label>
+          <input type="text" id="outroText" placeholder="e.g. Subscribe for more solved assignments">
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="cardSecs">Card length <b id="cardLabel">3.0s</b></label>
+            <input type="range" id="cardSecs" min="1" max="8" value="3" step="0.5">
+          </div>
+          <div class="field">
+            <label for="accentColor">Title colour</label>
+            <input type="color" id="accentColor" value="#F0A830">
+          </div>
+        </div>
+        <div class="field">
+          <label for="watermark">Watermark</label>
+          <input type="text" id="watermark" placeholder="e.g. @YourChannel">
+        </div>
+        <label class="check" for="showCounter">
+          <input type="checkbox" id="showCounter" checked>
+          Show a page counter in the corner
+        </label>
+        <label class="check" for="showBar">
+          <input type="checkbox" id="showBar" checked>
+          Show a progress bar along the bottom
+        </label>
+      </div>
+
+      <div class="export">
+        <button class="btn primary" id="renderBtn" disabled>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>
+          <span id="renderLabel">Render video</span>
+        </button>
+        <div class="prog" id="progWrap" hidden><i id="progBar"></i></div>
+        <p class="note" id="renderNote">Load a PDF to begin.</p>
+
+        <div class="result" id="result" hidden>
+          <p id="resultText">Video ready.</p>
+          <video id="resultVideo" controls playsinline></video>
+          <span class="tcs" id="resultMeta"></span>
+          <button class="btn" id="downloadBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
+            Download video
+          </button>
+          <button class="btn" id="chaptersBtn" hidden>Show YouTube chapters</button>
+          <div class="chapters" id="chapters" hidden></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* ---------------- state ---------------- */
+var S = {
+  pdf:null, pages:[], from:1, to:1,
+  mode:"scroll", ar:"16:9", plat:"YouTube",
+  duration:180, fps:30, quality:1080,
+  fit:"width", margin:4, bg:"#0F1115", accent:"#F0A830",
+  transition:"fade", ease:true,
+  music:null, musicName:"", volume:.6, fadeAudio:true, loopAudio:true,
+  title:"", subtitle:"", outro:"", cardSecs:3, watermark:"",
+  counter:true, bar:true,
+  playing:false, rendering:false, t:0, raf:0, lastTick:0,
+  blob:null, chapters:""
+};
+
+var CANVAS_LONG = { "720":1280, "1080":1920, "1440":2560 };
+
+function arRatio(ar){
+  var p = ar.split(":"); return (+p[0])/(+p[1]);
+}
+function outSize(){
+  var r = arRatio(S.ar), long = CANVAS_LONG[String(S.quality)] || 1920, w, h;
+  if (r >= 1){ w = long; h = Math.round(long / r); }
+  else { h = long; w = Math.round(long * r); }
+  // keep both dimensions even (encoder-friendly)
+  return { w: w - (w % 2), h: h - (h % 2) };
+}
+function fmtTC(sec){
+  sec = Math.max(0, sec);
+  var h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = Math.floor(sec%60);
+  var p = function(n){ return n < 10 ? "0"+n : ""+n; };
+  return p(h)+":"+p(m)+":"+p(s);
+}
+function fmtShort(sec){
+  var m = Math.floor(sec/60), s = Math.round(sec%60);
+  if (s === 60){ m++; s = 0; }
+  return m + ":" + (s<10?"0":"") + s;
+}
+function status(text, meta, kind){
+  $("statusText").textContent = text;
+  $("statusMeta").textContent = meta || "";
+  var d = $("statusDot");
+  d.className = "dot" + (kind ? " "+kind : "");
+}
+
+/* ---------------- page rasterizing ---------------- */
+// Render each page once at a width generous enough for the output, reuse forever.
+function rasterize(pdf, from, to, onProgress){
+  var out = [], i = from;
+  var target = Math.max(1100, Math.round(outSize().w * 1.35));
+  function next(){
+    if (i > to) return Promise.resolve(out);
+    return pdf.getPage(i).then(function(page){
+      var base = page.getViewport({ scale: 1 });
+      var scale = Math.min(3.2, target / base.width);
+      var vp = page.getViewport({ scale: scale });
+      var c = document.createElement("canvas");
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      var ctx = c.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, c.width, c.height);
+      return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function(){
+        return page.getTextContent().then(function(tc){
+          var chars = 0;
+          for (var k = 0; k < tc.items.length; k++) chars += (tc.items[k].str || "").length;
+          return chars;
+        }).catch(function(){ return 0; }).then(function(chars){
+          out.push({ canvas:c, w:c.width, h:c.height, num:i, chars:chars });
+          if (onProgress) onProgress(out.length, to - from + 1);
+          i++;
+          return next();
+        });
+      });
+    });
+  }
+  return next();
+}
+
+/* ---------------- layout maths ----------------
+   Every mode works on the same idea: a virtual strip of pages laid out
+   vertically, and a camera that moves down it. Slide modes just snap the
+   camera to one page at a time instead of gliding.
+------------------------------------------------ */
+function layout(){
+  var o = outSize();
+  var pad = Math.round(o.w * (S.margin/100));
+  var avail = o.w - pad*2;
+  var gap = S.mode === "scroll" || S.mode === "autopace" ? Math.round(o.h * 0.035) : 0;
+  var items = [], y = 0;
+
+  for (var i = 0; i < S.pages.length; i++){
+    var p = S.pages[i], w, h;
+    if (S.fit === "contain" && S.mode !== "scroll" && S.mode !== "autopace"){
+      var sc = Math.min(avail / p.w, (o.h - pad*2) / p.h);
+      w = p.w * sc; h = p.h * sc;
+    } else {
+      w = avail; h = p.h * (avail / p.w);
+    }
+    items.push({ page:p, x:(o.w - w)/2, y:y, w:w, h:h });
+    y += h + gap;
+  }
+  return { out:o, items:items, total:y - gap, pad:pad };
+}
+
+/* ---------------- timing ---------------- */
+function cardTimes(){
+  var intro = S.title ? S.cardSecs : 0;
+  var outro = S.outro ? S.cardSecs : 0;
+  return { intro:intro, outro:outro, body:Math.max(1, S.duration - intro - outro) };
+}
+
+// For slide/kenburns: seconds each page holds. Auto pace weights by text volume.
+function pageWeights(){
+  var n = S.pages.length, w = [], i;
+  if (S.mode === "autopace"){
+    var total = 0;
+    for (i = 0; i < n; i++){
+      // floor of 0.45 so a near-empty page still gets sensible screen time
+      var v = 0.45 + Math.min(2.2, (S.pages[i].chars || 0) / 900);
+      w.push(v); total += v;
+    }
+    for (i = 0; i < n; i++) w[i] /= total;
+  } else {
+    for (i = 0; i < n; i++) w.push(1/n);
+  }
+  return w;
+}
+
+function easeInOut(t){
+  return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+}
+
+/* ---------------- the compositor ----------------
+   drawFrame(ctx, t) paints the whole video at time t. Preview and export
+   both call this, so what you scrub is exactly what you get.
+------------------------------------------------- */
+var L = null; // cached layout
+
+function drawFrame(ctx, t){
+  var o = L.out, ct = cardTimes();
+  ctx.save();
+  ctx.fillStyle = S.bg;
+  ctx.fillRect(0, 0, o.w, o.h);
+
+  var pageShown = 0, bodyProgress = 0;
+
+  if (ct.intro && t < ct.intro){
+    drawCard(ctx, o, S.title, S.subtitle, fadeAlpha(t, ct.intro));
+  } else if (ct.outro && t >= ct.intro + ct.body){
+    drawCard(ctx, o, S.outro, "", fadeAlpha(t - ct.intro - ct.body, ct.outro));
+  } else {
+    var bt = Math.min(ct.body, Math.max(0, t - ct.intro));
+    bodyProgress = ct.body > 0 ? bt / ct.body : 0;
+    if (S.mode === "slide" || S.mode === "kenburns"){
+      pageShown = drawSlides(ctx, o, bodyProgress);
+    } else {
+      pageShown = drawScroll(ctx, o, bodyProgress);
+    }
+    drawOverlays(ctx, o, pageShown, bodyProgress);
+  }
+
+  ctx.restore();
+}
+
+function fadeAlpha(t, span){
+  var f = Math.min(0.45, span * 0.28);
+  if (t < f) return t / f;
+  if (t > span - f) return Math.max(0, (span - t) / f);
+  return 1;
+}
+
+/* --- continuous / auto pace --- */
+function drawScroll(ctx, o, prog){
+  var travel = Math.max(0, L.total - o.h);
+  var p = prog;
+
+  if (S.mode === "autopace"){
+    p = autopaceCurve(prog);
+  } else if (S.ease){
+    p = easeInOut(prog);
+  }
+
+  // A single page shorter than the frame has nowhere to travel: centre it.
+  var camY = travel > 0 ? p * travel : -(o.h - L.total)/2;
+  var shown = 1;
+
+  for (var i = 0; i < L.items.length; i++){
+    var it = L.items[i];
+    var y = it.y - camY;
+    if (y > o.h || y + it.h < 0) continue;
+    if (y <= o.h * 0.45 && y + it.h >= o.h * 0.45) shown = it.page.num;
+    drawPage(ctx, it.page, it.x, y, it.w, it.h);
+  }
+  return shown;
+}
+
+// Maps linear time onto distance so text-heavy pages scroll more slowly.
+function autopaceCurve(prog){
+  var w = pageWeights(), acc = 0, i;
+  var tAcc = [0], dAcc = [0], distTotal = L.total, d = 0;
+  for (i = 0; i < L.items.length; i++){
+    acc += w[i]; d += L.items[i].h + (i < L.items.length-1 ? (L.items[1] ? L.items[1].y - L.items[0].y - L.items[0].h : 0) : 0);
+    tAcc.push(acc); dAcc.push(Math.min(1, d / distTotal));
+  }
+  for (i = 1; i < tAcc.length; i++){
+    if (prog <= tAcc[i]){
+      var span = tAcc[i] - tAcc[i-1] || 1;
+      var local = (prog - tAcc[i-1]) / span;
+      return dAcc[i-1] + (dAcc[i] - dAcc[i-1]) * local;
+    }
+  }
+  return 1;
+}
+
+/* --- slide / ken burns --- */
+function drawSlides(ctx, o, prog){
+  var w = pageWeights(), n = L.items.length;
+  var acc = 0, idx = 0, local = 0;
+  for (var i = 0; i < n; i++){
+    if (prog <= acc + w[i] || i === n-1){ idx = i; local = w[i] ? (prog - acc)/w[i] : 0; break; }
+    acc += w[i];
+  }
+  local = Math.min(1, Math.max(0, local));
+
+  var tr = S.transition, trDur = 0.22; // share of a page's time spent transitioning
+  var cur = L.items[idx], nxt = L.items[idx+1];
+
+  if (S.mode === "kenburns"){
+    drawKB(ctx, o, cur, local, 1);
+    if (nxt && local > 1-trDur && tr !== "cut"){
+      drawKB(ctx, o, nxt, 0, (local - (1-trDur))/trDur);
+    }
+    return cur.page.num;
+  }
+
+  var inTr = nxt && local > 1 - trDur && tr !== "cut";
+  var k = inTr ? (local - (1-trDur)) / trDur : 0;
+  k = easeInOut(Math.min(1, k));
+
+  if (!inTr){
+    drawFitted(ctx, o, cur, 0, 0, 1);
+  } else if (tr === "fade"){
+    drawFitted(ctx, o, cur, 0, 0, 1 - k);
+    drawFitted(ctx, o, nxt, 0, 0, k);
+  } else if (tr === "push"){
+    drawFitted(ctx, o, cur, 0, -o.h * k, 1);
+    drawFitted(ctx, o, nxt, 0, o.h * (1-k), 1);
+  } else {
+    drawFitted(ctx, o, cur, -o.w * k, 0, 1);
+    drawFitted(ctx, o, nxt, o.w * (1-k), 0, 1);
+  }
+  return (inTr && k > .5 ? nxt : cur).page.num;
+}
+
+function drawFitted(ctx, o, it, dx, dy, alpha){
+  var pad = L.pad;
+  var sc = Math.min((o.w - pad*2) / it.page.w, (o.h - pad*2) / it.page.h);
+  if (S.fit === "width") sc = (o.w - pad*2) / it.page.w;
+  var w = it.page.w * sc, h = it.page.h * sc;
+  var x = (o.w - w)/2 + dx;
+  var y = (o.h - h)/2 + dy;
+  if (S.fit === "width" && h > o.h - pad*2) y = pad + dy; // tall page: pin to top
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawPage(ctx, it.page, x, y, w, h);
+  ctx.restore();
+}
+
+function drawKB(ctx, o, it, local, alpha){
+  var zoom = 1.06 + 0.07 * local;
+  var pad = L.pad;
+  var sc = Math.min((o.w - pad*2)/it.page.w, (o.h - pad*2)/it.page.h) * zoom;
+  var w = it.page.w * sc, h = it.page.h * sc;
+  var drift = (h > o.h) ? (h - o.h) * local : 0;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawPage(ctx, it.page, (o.w - w)/2, (o.h - h)/2 - (h > o.h ? (h-o.h)/2 - drift : 0), w, h);
+  ctx.restore();
+}
+
+function drawPage(ctx, page, x, y, w, h){
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.45)";
+  ctx.shadowBlur = Math.max(8, w * 0.012);
+  ctx.shadowOffsetY = Math.max(2, w * 0.003);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  ctx.drawImage(page.canvas, x, y, w, h);
+}
+
+/* ---------------- cards & overlays ---------------- */
+function drawCard(ctx, o, title, sub, alpha){
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.textAlign = "center";
+  var base = Math.min(o.w, o.h);
+
+  ctx.fillStyle = S.accent;
+  ctx.font = "600 " + Math.round(base*0.075) + "px 'Barlow Condensed', sans-serif";
+  wrapText(ctx, title, o.w/2, o.h/2 - (sub ? base*0.045 : 0), o.w*0.82, base*0.09);
+
+  if (sub){
+    ctx.fillStyle = "#C9CEDA";
+    ctx.font = "400 " + Math.round(base*0.034) + "px Inter, sans-serif";
+    wrapText(ctx, sub, o.w/2, o.h/2 + base*0.065, o.w*0.75, base*0.045);
+  }
+  ctx.restore();
+}
+
+function wrapText(ctx, text, cx, cy, maxW, lineH){
+  var words = String(text).split(/\s+/), lines = [], line = "";
+  for (var i = 0; i < words.length; i++){
+    var test = line ? line + " " + words[i] : words[i];
+    if (ctx.measureText(test).width > maxW && line){ lines.push(line); line = words[i]; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  var startY = cy - (lines.length - 1) * lineH / 2;
+  for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], cx, startY + j*lineH);
+}
+
+function drawOverlays(ctx, o, pageNum, prog){
+  var base = Math.min(o.w, o.h);
+  var inset = Math.round(base * 0.028);
+
+  if (S.watermark){
+    ctx.save();
+    ctx.globalAlpha = .62;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "500 " + Math.round(base*0.024) + "px Inter, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 6;
+    ctx.fillText(S.watermark, inset, o.h - inset);
+    ctx.restore();
+  }
+
+  if (S.counter && S.pages.length){
+    var label = "Page " + pageNum + " / " + S.pages[S.pages.length-1].num;
+    ctx.save();
+    ctx.font = "500 " + Math.round(base*0.022) + "px 'JetBrains Mono', monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    var tw = ctx.measureText(label).width, ph = Math.round(base*0.042);
+    ctx.globalAlpha = .55; ctx.fillStyle = "#000000";
+    roundRect(ctx, o.w - inset - tw - ph*0.5, o.h - inset - ph, tw + ph*0.5, ph, ph*0.22);
+    ctx.fill();
+    ctx.globalAlpha = .95; ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(label, o.w - inset - ph*0.25, o.h - inset - ph*0.24);
+    ctx.restore();
+  }
+
+  if (S.bar){
+    var bh = Math.max(3, Math.round(o.h * 0.006));
+    ctx.save();
+    ctx.globalAlpha = .22; ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, o.h - bh, o.w, bh);
+    ctx.globalAlpha = 1; ctx.fillStyle = S.accent;
+    ctx.fillRect(0, o.h - bh, o.w * Math.min(1, Math.max(0, prog)), bh);
+    ctx.restore();
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+/* ---------------- preview ---------------- */
+var pv = $("preview"), pvCtx = pv.getContext("2d");
+
+function sizePreview(){
+  var o = outSize();
+  pv.width = o.w; pv.height = o.h;
+  pv.style.aspectRatio = o.w + " / " + o.h;
+}
+
+function refresh(){
+  if (!S.pages.length) return;
+  L = layout();
+  sizePreview();
+  drawFrame(pvCtx, S.t);
+  $("tcNow").textContent = fmtTC(S.t);
+  $("tcTotal").textContent = fmtTC(S.duration);
+  $("scrub").value = String(Math.round(S.t / S.duration * 1000));
+}
+
+function tick(now){
+  if (!S.playing) return;
+  var dt = (now - S.lastTick) / 1000;
+  S.lastTick = now;
+  S.t += dt;
+  if (S.t >= S.duration){ S.t = S.duration; pausePreview(); refresh(); return; }
+  refresh();
+  S.raf = requestAnimationFrame(tick);
+}
+
+function playPreview(){
+  if (!S.pages.length) return;
+  if (S.t >= S.duration) S.t = 0;
+  S.playing = true;
+  S.lastTick = performance.now();
+  $("playIcon").innerHTML = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  $("playBtn").setAttribute("aria-label", "Pause preview");
+  S.raf = requestAnimationFrame(tick);
+}
+function pausePreview(){
+  S.playing = false;
+  cancelAnimationFrame(S.raf);
+  $("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+  $("playBtn").setAttribute("aria-label", "Play preview");
+}
+
+/* ---------------- recording ----------------
+   Canvas is driven by a fixed-step clock and captured through
+   captureStream(). Music, if any, is mixed in via a WebAudio
+   destination node so it lands in the same file.
+--------------------------------------------- */
+function pickMime(){
+  var list = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=h264,opus",
+    "video/webm",
+    "video/mp4"
+  ];
+  for (var i = 0; i < list.length; i++){
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(list[i])) return list[i];
+  }
+  return "";
+}
+
+var audioCtx = null;
+
+function buildAudio(){
+  if (!S.music) return null;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    var src = audioCtx.createBufferSource();
+    src.buffer = S.music;
+    src.loop = !!S.loopAudio;
+    var gain = audioCtx.createGain();
+    var now = audioCtx.currentTime;
+    var vol = S.volume;
+    gain.gain.setValueAtTime(S.fadeAudio ? 0.0001 : vol, now);
+    if (S.fadeAudio){
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), now + 1.5);
+      gain.gain.setValueAtTime(Math.max(0.0001, vol), now + Math.max(2, S.duration - 2.5));
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + S.duration);
+    }
+    var dest = audioCtx.createMediaStreamDestination();
+    src.connect(gain); gain.connect(dest);
+    src.start();
+    return { src:src, dest:dest, gain:gain };
+  } catch(e){ return null; }
+}
+
+function render(){
+  if (S.rendering || !S.pages.length) return;
+  var mime = pickMime();
+  if (!mime){
+    $("renderNote").textContent = "This browser cannot record video. Try Chrome, Edge or Firefox.";
+    $("renderNote").className = "note warn";
+    return;
+  }
+
+  pausePreview();
+  S.rendering = true;
+  S.blob = null;
+  $("result").hidden = true;
+  $("progWrap").hidden = false;
+  $("renderBtn").className = "btn stop";
+  $("renderLabel").textContent = "Stop rendering";
+  $("renderBtn").disabled = false;
+  setControlsEnabled(false);
+
+  L = layout();
+  var o = L.out;
+  var rc = document.createElement("canvas");
+  rc.width = o.w; rc.height = o.h;
+  var rctx = rc.getContext("2d", { alpha:false });
+
+  var stream = rc.captureStream(S.fps);
+  var audio = buildAudio();
+  if (audio){
+    var at = audio.dest.stream.getAudioTracks();
+    for (var i = 0; i < at.length; i++) stream.addTrack(at[i]);
+  }
+
+  var bitrate = Math.round(o.w * o.h * S.fps * 0.09);
+  var rec;
+  try {
+    rec = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:Math.min(24000000, bitrate) });
+  } catch(e){
+    rec = new MediaRecorder(stream);
+  }
+  var chunks = [];
+  rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = function(){
+    var blob = new Blob(chunks, { type: mime.split(";")[0] });
+    finishRender(blob, mime);
+  };
+
+  var frames = Math.round(S.duration * S.fps);
+  var frame = 0;
+  var startWall = performance.now();
+  rec.start(1000);
+  status("Rendering", "frame 0 / " + frames, "rec");
+
+  var stopped = false;
+  S.stopRender = function(){ stopped = true; };
+
+  function step(){
+    if (stopped || frame >= frames){
+      try { rec.stop(); } catch(e){}
+      if (audio){ try { audio.src.stop(); } catch(e){} }
+      return;
+    }
+    var t = frame / S.fps;
+    drawFrame(rctx, t);
+    // Mirror into the preview so the user sees progress live.
+    pvCtx.drawImage(rc, 0, 0, pv.width, pv.height);
+    frame++;
+    var pct = frame / frames;
+    $("progBar").style.width = (pct*100).toFixed(1) + "%";
+    var elapsed = (performance.now() - startWall)/1000;
+    var eta = pct > 0.02 ? Math.round(elapsed/pct - elapsed) : 0;
+    $("renderNote").textContent = Math.round(pct*100) + "% · about " + fmtShort(eta) + " left";
+    $("renderNote").className = "note";
+    status("Rendering", "frame " + frame + " / " + frames, "rec");
+
+    // Real-time pacing keeps captureStream and the audio track in sync.
+    var target = startWall + (frame / S.fps) * 1000;
+    var wait = target - performance.now();
+    if (wait > 4) setTimeout(step, wait); else requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function finishRender(blob, mime){
+  S.rendering = false;
+  S.blob = blob;
+  S.stopRender = null;
+  $("progWrap").hidden = true;
+  $("renderBtn").className = "btn primary";
+  $("renderLabel").textContent = "Render again";
+  setControlsEnabled(true);
+
+  var ext = mime.indexOf("mp4") > -1 ? "mp4" : "webm";
+  S.ext = ext;
+  var url = URL.createObjectURL(blob);
+  $("resultVideo").src = url;
+  $("result").hidden = false;
+  $("resultText").textContent = "Video ready — " + ext.toUpperCase() + ", " + (blob.size/1048576).toFixed(1) + " MB";
+  $("resultMeta").textContent = outSize().w + "×" + outSize().h + " · " + S.fps + " fps · " + fmtTC(S.duration) + " · " + S.plat;
+  $("renderNote").textContent = "Saved in your browser. Download it below.";
+  $("renderNote").className = "note";
+  status("Done", ext.toUpperCase() + " ready", "ready");
+  buildChapters();
+}
+
+function buildChapters(){
+  if (S.mode !== "slide" && S.mode !== "kenburns" && S.mode !== "autopace"){
+    $("chaptersBtn").hidden = true; return;
+  }
+  var ct = cardTimes(), w = pageWeights(), acc = ct.intro, lines = [];
+  lines.push("00:00 Intro");
+  for (var i = 0; i < S.pages.length; i++){
+    lines.push(fmtTC(acc).replace(/^00:/, "") + " Page " + S.pages[i].num);
+    acc += w[i] * ct.body;
+  }
+  S.chapters = lines.join("\n");
+  $("chapters").textContent = S.chapters;
+  $("chaptersBtn").hidden = false;
+}
+
+/* ---------------- loading ---------------- */
+function loadPDF(file){
+  if (!file) return;
+  if (file.type && file.type.indexOf("pdf") === -1 && !/\.pdf$/i.test(file.name)){
+    status("That file is not a PDF", "", "");
+    return;
+  }
+  pausePreview();
+  $("pdfName").textContent = file.name;
+  status("Reading the PDF", file.name, "");
+  $("renderNote").textContent = "Opening " + file.name + "...";
+
+  file.arrayBuffer().then(function(buf){
+    return pdfjsLib.getDocument({ data: buf }).promise;
+  }).then(function(pdf){
+    S.pdf = pdf;
+    S.from = 1; S.to = pdf.numPages;
+    $("pageFrom").value = 1; $("pageFrom").max = pdf.numPages; $("pageFrom").disabled = false;
+    $("pageTo").value = pdf.numPages; $("pageTo").max = pdf.numPages; $("pageTo").disabled = false;
+    return rasterizePages();
+  }).catch(function(err){
+    status("Could not open that PDF", "", "");
+    $("renderNote").textContent = "That file could not be read. It may be corrupted or password protected.";
+    $("renderNote").className = "note warn";
+    console.error(err);
+  });
+}
+
+function rasterizePages(){
+  if (!S.pdf) return Promise.resolve();
+  var from = Math.max(1, Math.min(S.pdf.numPages, S.from));
+  var to = Math.max(from, Math.min(S.pdf.numPages, S.to));
+  status("Preparing pages", "", "");
+  $("renderBtn").disabled = true;
+  return rasterize(S.pdf, from, to, function(done, total){
+    status("Preparing pages", done + " / " + total, "");
+    $("renderNote").textContent = "Rendering page " + done + " of " + total + "...";
+  }).then(function(pages){
+    S.pages = pages;
+    S.t = 0;
+    $("drop").hidden = true;
+    $("playBtn").disabled = false;
+    $("scrub").disabled = false;
+    $("renderBtn").disabled = false;
+    suggestDuration();
+    refresh();
+    status("Ready", pages.length + " pages / " + S.plat + " " + S.ar, "ready");
+    $("renderNote").textContent = "Press play to check the pacing, then render.";
+    $("renderNote").className = "note";
+  });
+}
+
+// Suggest a sane default: roughly 12s of reading time per page.
+function suggestDuration(){
+  var guess = Math.min(1800, Math.max(15, S.pages.length * 12));
+  guess = Math.round(guess/5)*5;
+  S.duration = guess;
+  $("duration").value = String(guess);
+  $("durLabel").textContent = fmtShort(guess);
+}
+
+function setControlsEnabled(on){
+  var ids = ["pdfInput","pageFrom","pageTo","duration","quality","fps","fit","margin",
+             "bgColor","accentColor","transition","musicInput","volume","titleText",
+             "subtitleText","outroText","cardSecs","watermark","easeEnds","fadeAudio",
+             "loopAudio","showCounter","showBar","playBtn","scrub"];
+  for (var i = 0; i < ids.length; i++){
+    var el = $(ids[i]); if (el) el.disabled = !on;
+  }
+  if (on && !S.pdf){ $("pageFrom").disabled = true; $("pageTo").disabled = true; }
+}
+
+/* ---------------- wiring ---------------- */
+var drop = $("drop");
+drop.addEventListener("click", function(){ $("pdfInput").click(); });
+$("pdfInput").addEventListener("change", function(e){ loadPDF(e.target.files[0]); });
+
+["dragenter","dragover"].forEach(function(ev){
+  document.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add("hot"); });
+});
+document.addEventListener("dragleave", function(e){
+  if (e.relatedTarget) return;
+  drop.classList.remove("hot");
+});
+document.addEventListener("drop", function(e){
+  e.preventDefault();
+  drop.classList.remove("hot");
+  if (e.dataTransfer && e.dataTransfer.files.length) loadPDF(e.dataTransfer.files[0]);
+});
+
+$("playBtn").addEventListener("click", function(){
+  if (S.playing) pausePreview(); else playPreview();
+});
+$("scrub").addEventListener("input", function(e){
+  pausePreview();
+  S.t = (+e.target.value/1000) * S.duration;
+  refresh();
+});
+
+var pageTimer;
+function onPageRange(){
+  clearTimeout(pageTimer);
+  pageTimer = setTimeout(function(){
+    S.from = +$("pageFrom").value || 1;
+    S.to = +$("pageTo").value || S.from;
+    if (S.to < S.from){ S.to = S.from; $("pageTo").value = S.to; }
+    rasterizePages();
+  }, 450);
+}
+$("pageFrom").addEventListener("input", onPageRange);
+$("pageTo").addEventListener("input", onPageRange);
+
+$("modes").addEventListener("click", function(e){
+  var b = e.target.closest(".mode"); if (!b) return;
+  var btns = $("modes").querySelectorAll(".mode");
+  for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-pressed", String(btns[i] === b));
+  S.mode = b.dataset.mode;
+  $("transitionField").hidden = S.mode !== "slide";
+  pausePreview(); refresh();
+});
+
+$("plats").addEventListener("click", function(e){
+  var b = e.target.closest(".plat"); if (!b) return;
+  var btns = $("plats").querySelectorAll(".plat");
+  for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-pressed", String(btns[i] === b));
+  S.ar = b.dataset.ar;
+  S.plat = b.textContent.replace(/\s*\d+:\d+\s*$/, "").trim();
+  pausePreview(); refresh();
+  if (S.pages.length) status("Ready", S.pages.length + " pages / " + S.plat + " " + S.ar, "ready");
+});
+
+function bind(id, key, transform, label, fmt){
+  var el = $(id); if (!el) return;
+  el.addEventListener("input", function(){
+    var v = el.type === "checkbox" ? el.checked : el.value;
+    S[key] = transform ? transform(v) : v;
+    if (label) $(label).textContent = fmt ? fmt(S[key]) : S[key];
+    if (id === "duration" && S.t > S.duration) S.t = S.duration;
+    pausePreview(); refresh();
+  });
+}
+bind("duration","duration",Number,"durLabel",fmtShort);
+bind("quality","quality",Number);
+bind("fps","fps",Number);
+bind("fit","fit");
+bind("margin","margin",Number,"marginLabel",function(v){ return v+"%"; });
+bind("bgColor","bg");
+bind("accentColor","accent");
+bind("transition","transition");
+bind("easeEnds","ease");
+bind("titleText","title");
+bind("subtitleText","subtitle");
+bind("outroText","outro");
+bind("cardSecs","cardSecs",Number,"cardLabel",function(v){ return v.toFixed(1)+"s"; });
+bind("watermark","watermark");
+bind("showCounter","counter");
+bind("showBar","bar");
+bind("volume","volume",function(v){ return +v/100; },"volLabel",function(v){ return Math.round(v*100)+"%"; });
+bind("fadeAudio","fadeAudio");
+bind("loopAudio","loopAudio");
+
+$("musicInput").addEventListener("change", function(e){
+  var f = e.target.files[0]; if (!f) return;
+  $("musicName").textContent = f.name;
+  f.arrayBuffer().then(function(buf){
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx.decodeAudioData(buf);
+  }).then(function(b){
+    S.music = b; S.musicName = f.name;
+    $("musicName").textContent = f.name + " / " + fmtShort(b.duration);
+  }).catch(function(){
+    $("musicName").textContent = "Could not read that audio file";
+    S.music = null;
+  });
+});
+
+$("renderBtn").addEventListener("click", function(){
+  if (S.rendering){ if (S.stopRender) S.stopRender(); return; }
+  render();
+});
+
+// The viewer sandbox does not allow a page to start its own download, so
+// the file is handed over through the downloads capability instead. When
+// that is unavailable (opened as a local file), fall back to a link.
+var downloader = null, downloaderReady = false;
+if (window.claude && typeof window.claude.use === "function"){
+  window.claude.use("downloads").then(function(d){
+    downloader = d; downloaderReady = true;
+  }).catch(function(){ downloaderReady = true; });
+} else {
+  downloaderReady = true;
+}
+
+function outName(){
+  var base = (S.title || "scrollcast")
+    .replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "scrollcast";
+  return base + "-" + S.plat.toLowerCase() + "." + (S.ext || "webm");
+}
+
+function legacySave(){
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(S.blob);
+  a.download = outName();
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+$("downloadBtn").addEventListener("click", function(){
+  if (!S.blob) return;
+  var btn = $("downloadBtn");
+  if (!downloader){ legacySave(); return; }
+  btn.disabled = true;
+  downloader.save({ filename: outName(), data: S.blob }).then(function(){
+    btn.disabled = false;
+    $("renderNote").textContent = "Saved. Upload it straight to " + S.plat + ".";
+    $("renderNote").className = "note";
+  }).catch(function(err){
+    btn.disabled = false;
+    var code = err && err.code;
+    if (code === "declined") return;
+    if (code === "rate_limited"){
+      $("renderNote").textContent = "A save prompt is already open. Try again in a moment.";
+    } else {
+      $("renderNote").textContent = "Saving is not available here. Use the video player above to save the file instead.";
+    }
+    $("renderNote").className = "note warn";
+  });
+});
+
+$("chaptersBtn").addEventListener("click", function(){
+  var c = $("chapters");
+  c.hidden = !c.hidden;
+  $("chaptersBtn").textContent = c.hidden ? "Show YouTube chapters" : "Hide YouTube chapters";
+});
+
+document.addEventListener("keydown", function(e){
+  if (/input|select|textarea/i.test(e.target.tagName)) return;
+  if (e.code === "Space" && S.pages.length && !S.rendering){
+    e.preventDefault();
+    if (S.playing) pausePreview(); else playPreview();
+  }
+});
+
+sizePreview();
+status("Waiting for a PDF", "", "");
+})();
+</script>

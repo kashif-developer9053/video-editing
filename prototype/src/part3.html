@@ -1,0 +1,109 @@
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Scroll<span>cast</span></h1>
+      <em>PDF &rarr; Video</em>
+    </div>
+    <span class="free-tag">100% LOCAL &middot; NO UPLOAD</span>
+  </div>
+
+  <div class="main">
+    <!-- ============ STAGE ============ -->
+    <div class="stage-wrap">
+      <div class="stage">
+        <canvas id="preview" width="1280" height="720"></canvas>
+        <div class="drop" id="drop">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+          </svg>
+          <h2>Drop a PDF</h2>
+          <p>Your file is rendered here in your browser and never leaves your computer. Nothing is uploaded to any server.</p>
+          <small>Click anywhere in this area to browse</small>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="scrub">
+          <button class="play" id="playBtn" disabled aria-label="Play preview">
+            <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <input type="range" id="scrub" min="0" max="1000" value="0" step="1" disabled aria-label="Scrub timeline">
+          <span class="tc"><b id="tcNow">00:00:00</b> / <span id="tcTotal">00:00:00</span></span>
+        </div>
+        <div class="statusline">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">Waiting for a PDF</span>
+          <span id="statusMeta"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RAIL ============ -->
+    <div class="rail">
+
+      <div class="group">
+        <h3>Source</h3>
+        <label class="filebtn" for="pdfInput">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span id="pdfName">Choose a PDF file</span>
+        </label>
+        <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
+        <div class="row">
+          <div class="field">
+            <label for="pageFrom">First page</label>
+            <input type="number" id="pageFrom" min="1" value="1" disabled>
+          </div>
+          <div class="field">
+            <label for="pageTo">Last page</label>
+            <input type="number" id="pageTo" min="1" value="1" disabled>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Motion</h3>
+        <div class="modes" id="modes">
+          <button class="mode" data-mode="scroll" aria-pressed="true">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><path d="M8 4h44M8 11h44M8 18h30"/><path d="M4 2v18" stroke-dasharray="2 3"/></svg>
+            <strong>Continuous</strong>
+            <span>One long strip, scrolls top to bottom without stopping</span>
+          </button>
+          <button class="mode" data-mode="slide" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><rect x="3" y="3" width="24" height="16" rx="2"/><rect x="33" y="3" width="24" height="16" rx="2"/></svg>
+            <strong>Slide</strong>
+            <span>Holds each page, then cuts or fades to the next</span>
+          </button>
+          <button class="mode" data-mode="kenburns" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><rect x="3" y="3" width="54" height="16" rx="2"/><rect x="18" y="7" width="24" height="9" rx="1" stroke-dasharray="3 2"/></svg>
+            <strong>Slow zoom</strong>
+            <span>Holds each page with a gentle drift and zoom</span>
+          </button>
+          <button class="mode" data-mode="autopace" aria-pressed="false">
+            <svg viewBox="0 0 60 22" stroke-linecap="round"><path d="M8 5h44M8 11h30M8 17h44"/><circle cx="52" cy="11" r="2.5"/></svg>
+            <strong>Auto pace</strong>
+            <span>Scrolls, but slows down on pages with more text</span>
+          </button>
+        </div>
+
+        <div class="field">
+          <label for="duration">Video length <b id="durLabel">3:00</b></label>
+          <input type="range" id="duration" min="10" max="1800" value="180" step="5">
+        </div>
+
+        <div class="field" id="transitionField" hidden>
+          <label for="transition">Between pages</label>
+          <select id="transition">
+            <option value="cut">Hard cut</option>
+            <option value="fade" selected>Cross fade</option>
+            <option value="push">Push up</option>
+            <option value="slide">Slide across</option>
+          </select>
+        </div>
+
+        <label class="check" for="easeEnds">
+          <input type="checkbox" id="easeEnds" checked>
+          Ease in and out at the start and end
+        </label>
+      </div>

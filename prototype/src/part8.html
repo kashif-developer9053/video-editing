@@ -1,0 +1,164 @@
+
+/* ---------------- recording ----------------
+   Canvas is driven by a fixed-step clock and captured through
+   captureStream(). Music, if any, is mixed in via a WebAudio
+   destination node so it lands in the same file.
+--------------------------------------------- */
+function pickMime(){
+  var list = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=h264,opus",
+    "video/webm",
+    "video/mp4"
+  ];
+  for (var i = 0; i < list.length; i++){
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(list[i])) return list[i];
+  }
+  return "";
+}
+
+var audioCtx = null;
+
+function buildAudio(){
+  if (!S.music) return null;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    var src = audioCtx.createBufferSource();
+    src.buffer = S.music;
+    src.loop = !!S.loopAudio;
+    var gain = audioCtx.createGain();
+    var now = audioCtx.currentTime;
+    var vol = S.volume;
+    gain.gain.setValueAtTime(S.fadeAudio ? 0.0001 : vol, now);
+    if (S.fadeAudio){
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), now + 1.5);
+      gain.gain.setValueAtTime(Math.max(0.0001, vol), now + Math.max(2, S.duration - 2.5));
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + S.duration);
+    }
+    var dest = audioCtx.createMediaStreamDestination();
+    src.connect(gain); gain.connect(dest);
+    src.start();
+    return { src:src, dest:dest, gain:gain };
+  } catch(e){ return null; }
+}
+
+function render(){
+  if (S.rendering || !S.pages.length) return;
+  var mime = pickMime();
+  if (!mime){
+    $("renderNote").textContent = "This browser cannot record video. Try Chrome, Edge or Firefox.";
+    $("renderNote").className = "note warn";
+    return;
+  }
+
+  pausePreview();
+  S.rendering = true;
+  S.blob = null;
+  $("result").hidden = true;
+  $("progWrap").hidden = false;
+  $("renderBtn").className = "btn stop";
+  $("renderLabel").textContent = "Stop rendering";
+  $("renderBtn").disabled = false;
+  setControlsEnabled(false);
+
+  L = layout();
+  var o = L.out;
+  var rc = document.createElement("canvas");
+  rc.width = o.w; rc.height = o.h;
+  var rctx = rc.getContext("2d", { alpha:false });
+
+  var stream = rc.captureStream(S.fps);
+  var audio = buildAudio();
+  if (audio){
+    var at = audio.dest.stream.getAudioTracks();
+    for (var i = 0; i < at.length; i++) stream.addTrack(at[i]);
+  }
+
+  var bitrate = Math.round(o.w * o.h * S.fps * 0.09);
+  var rec;
+  try {
+    rec = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:Math.min(24000000, bitrate) });
+  } catch(e){
+    rec = new MediaRecorder(stream);
+  }
+  var chunks = [];
+  rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = function(){
+    var blob = new Blob(chunks, { type: mime.split(";")[0] });
+    finishRender(blob, mime);
+  };
+
+  var frames = Math.round(S.duration * S.fps);
+  var frame = 0;
+  var startWall = performance.now();
+  rec.start(1000);
+  status("Rendering", "frame 0 / " + frames, "rec");
+
+  var stopped = false;
+  S.stopRender = function(){ stopped = true; };
+
+  function step(){
+    if (stopped || frame >= frames){
+      try { rec.stop(); } catch(e){}
+      if (audio){ try { audio.src.stop(); } catch(e){} }
+      return;
+    }
+    var t = frame / S.fps;
+    drawFrame(rctx, t);
+    // Mirror into the preview so the user sees progress live.
+    pvCtx.drawImage(rc, 0, 0, pv.width, pv.height);
+    frame++;
+    var pct = frame / frames;
+    $("progBar").style.width = (pct*100).toFixed(1) + "%";
+    var elapsed = (performance.now() - startWall)/1000;
+    var eta = pct > 0.02 ? Math.round(elapsed/pct - elapsed) : 0;
+    $("renderNote").textContent = Math.round(pct*100) + "% · about " + fmtShort(eta) + " left";
+    $("renderNote").className = "note";
+    status("Rendering", "frame " + frame + " / " + frames, "rec");
+
+    // Real-time pacing keeps captureStream and the audio track in sync.
+    var target = startWall + (frame / S.fps) * 1000;
+    var wait = target - performance.now();
+    if (wait > 4) setTimeout(step, wait); else requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function finishRender(blob, mime){
+  S.rendering = false;
+  S.blob = blob;
+  S.stopRender = null;
+  $("progWrap").hidden = true;
+  $("renderBtn").className = "btn primary";
+  $("renderLabel").textContent = "Render again";
+  setControlsEnabled(true);
+
+  var ext = mime.indexOf("mp4") > -1 ? "mp4" : "webm";
+  S.ext = ext;
+  var url = URL.createObjectURL(blob);
+  $("resultVideo").src = url;
+  $("result").hidden = false;
+  $("resultText").textContent = "Video ready — " + ext.toUpperCase() + ", " + (blob.size/1048576).toFixed(1) + " MB";
+  $("resultMeta").textContent = outSize().w + "×" + outSize().h + " · " + S.fps + " fps · " + fmtTC(S.duration) + " · " + S.plat;
+  $("renderNote").textContent = "Saved in your browser. Download it below.";
+  $("renderNote").className = "note";
+  status("Done", ext.toUpperCase() + " ready", "ready");
+  buildChapters();
+}
+
+function buildChapters(){
+  if (S.mode !== "slide" && S.mode !== "kenburns" && S.mode !== "autopace"){
+    $("chaptersBtn").hidden = true; return;
+  }
+  var ct = cardTimes(), w = pageWeights(), acc = ct.intro, lines = [];
+  lines.push("00:00 Intro");
+  for (var i = 0; i < S.pages.length; i++){
+    lines.push(fmtTC(acc).replace(/^00:/, "") + " Page " + S.pages[i].num);
+    acc += w[i] * ct.body;
+  }
+  S.chapters = lines.join("\n");
+  $("chapters").textContent = S.chapters;
+  $("chaptersBtn").hidden = false;
+}

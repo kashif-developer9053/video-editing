@@ -1,0 +1,140 @@
+
+<script>
+(function(){
+"use strict";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* ---------------- state ---------------- */
+var S = {
+  pdf:null, pages:[], from:1, to:1,
+  mode:"scroll", ar:"16:9", plat:"YouTube",
+  duration:180, fps:30, quality:1080,
+  fit:"width", margin:4, bg:"#0F1115", accent:"#F0A830",
+  transition:"fade", ease:true,
+  music:null, musicName:"", volume:.6, fadeAudio:true, loopAudio:true,
+  title:"", subtitle:"", outro:"", cardSecs:3, watermark:"",
+  counter:true, bar:true,
+  playing:false, rendering:false, t:0, raf:0, lastTick:0,
+  blob:null, chapters:""
+};
+
+var CANVAS_LONG = { "720":1280, "1080":1920, "1440":2560 };
+
+function arRatio(ar){
+  var p = ar.split(":"); return (+p[0])/(+p[1]);
+}
+function outSize(){
+  var r = arRatio(S.ar), long = CANVAS_LONG[String(S.quality)] || 1920, w, h;
+  if (r >= 1){ w = long; h = Math.round(long / r); }
+  else { h = long; w = Math.round(long * r); }
+  // keep both dimensions even (encoder-friendly)
+  return { w: w - (w % 2), h: h - (h % 2) };
+}
+function fmtTC(sec){
+  sec = Math.max(0, sec);
+  var h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = Math.floor(sec%60);
+  var p = function(n){ return n < 10 ? "0"+n : ""+n; };
+  return p(h)+":"+p(m)+":"+p(s);
+}
+function fmtShort(sec){
+  var m = Math.floor(sec/60), s = Math.round(sec%60);
+  if (s === 60){ m++; s = 0; }
+  return m + ":" + (s<10?"0":"") + s;
+}
+function status(text, meta, kind){
+  $("statusText").textContent = text;
+  $("statusMeta").textContent = meta || "";
+  var d = $("statusDot");
+  d.className = "dot" + (kind ? " "+kind : "");
+}
+
+/* ---------------- page rasterizing ---------------- */
+// Render each page once at a width generous enough for the output, reuse forever.
+function rasterize(pdf, from, to, onProgress){
+  var out = [], i = from;
+  var target = Math.max(1100, Math.round(outSize().w * 1.35));
+  function next(){
+    if (i > to) return Promise.resolve(out);
+    return pdf.getPage(i).then(function(page){
+      var base = page.getViewport({ scale: 1 });
+      var scale = Math.min(3.2, target / base.width);
+      var vp = page.getViewport({ scale: scale });
+      var c = document.createElement("canvas");
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      var ctx = c.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, c.width, c.height);
+      return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function(){
+        return page.getTextContent().then(function(tc){
+          var chars = 0;
+          for (var k = 0; k < tc.items.length; k++) chars += (tc.items[k].str || "").length;
+          return chars;
+        }).catch(function(){ return 0; }).then(function(chars){
+          out.push({ canvas:c, w:c.width, h:c.height, num:i, chars:chars });
+          if (onProgress) onProgress(out.length, to - from + 1);
+          i++;
+          return next();
+        });
+      });
+    });
+  }
+  return next();
+}
+
+/* ---------------- layout maths ----------------
+   Every mode works on the same idea: a virtual strip of pages laid out
+   vertically, and a camera that moves down it. Slide modes just snap the
+   camera to one page at a time instead of gliding.
+------------------------------------------------ */
+function layout(){
+  var o = outSize();
+  var pad = Math.round(o.w * (S.margin/100));
+  var avail = o.w - pad*2;
+  var gap = S.mode === "scroll" || S.mode === "autopace" ? Math.round(o.h * 0.035) : 0;
+  var items = [], y = 0;
+
+  for (var i = 0; i < S.pages.length; i++){
+    var p = S.pages[i], w, h;
+    if (S.fit === "contain" && S.mode !== "scroll" && S.mode !== "autopace"){
+      var sc = Math.min(avail / p.w, (o.h - pad*2) / p.h);
+      w = p.w * sc; h = p.h * sc;
+    } else {
+      w = avail; h = p.h * (avail / p.w);
+    }
+    items.push({ page:p, x:(o.w - w)/2, y:y, w:w, h:h });
+    y += h + gap;
+  }
+  return { out:o, items:items, total:y - gap, pad:pad };
+}
+
+/* ---------------- timing ---------------- */
+function cardTimes(){
+  var intro = S.title ? S.cardSecs : 0;
+  var outro = S.outro ? S.cardSecs : 0;
+  return { intro:intro, outro:outro, body:Math.max(1, S.duration - intro - outro) };
+}
+
+// For slide/kenburns: seconds each page holds. Auto pace weights by text volume.
+function pageWeights(){
+  var n = S.pages.length, w = [], i;
+  if (S.mode === "autopace"){
+    var total = 0;
+    for (i = 0; i < n; i++){
+      // floor of 0.45 so a near-empty page still gets sensible screen time
+      var v = 0.45 + Math.min(2.2, (S.pages[i].chars || 0) / 900);
+      w.push(v); total += v;
+    }
+    for (i = 0; i < n; i++) w[i] /= total;
+  } else {
+    for (i = 0; i < n; i++) w.push(1/n);
+  }
+  return w;
+}
+
+function easeInOut(t){
+  return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+}

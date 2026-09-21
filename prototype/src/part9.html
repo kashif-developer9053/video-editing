@@ -1,0 +1,247 @@
+
+/* ---------------- loading ---------------- */
+function loadPDF(file){
+  if (!file) return;
+  if (file.type && file.type.indexOf("pdf") === -1 && !/\.pdf$/i.test(file.name)){
+    status("That file is not a PDF", "", "");
+    return;
+  }
+  pausePreview();
+  $("pdfName").textContent = file.name;
+  status("Reading the PDF", file.name, "");
+  $("renderNote").textContent = "Opening " + file.name + "...";
+
+  file.arrayBuffer().then(function(buf){
+    return pdfjsLib.getDocument({ data: buf }).promise;
+  }).then(function(pdf){
+    S.pdf = pdf;
+    S.from = 1; S.to = pdf.numPages;
+    $("pageFrom").value = 1; $("pageFrom").max = pdf.numPages; $("pageFrom").disabled = false;
+    $("pageTo").value = pdf.numPages; $("pageTo").max = pdf.numPages; $("pageTo").disabled = false;
+    return rasterizePages();
+  }).catch(function(err){
+    status("Could not open that PDF", "", "");
+    $("renderNote").textContent = "That file could not be read. It may be corrupted or password protected.";
+    $("renderNote").className = "note warn";
+    console.error(err);
+  });
+}
+
+function rasterizePages(){
+  if (!S.pdf) return Promise.resolve();
+  var from = Math.max(1, Math.min(S.pdf.numPages, S.from));
+  var to = Math.max(from, Math.min(S.pdf.numPages, S.to));
+  status("Preparing pages", "", "");
+  $("renderBtn").disabled = true;
+  return rasterize(S.pdf, from, to, function(done, total){
+    status("Preparing pages", done + " / " + total, "");
+    $("renderNote").textContent = "Rendering page " + done + " of " + total + "...";
+  }).then(function(pages){
+    S.pages = pages;
+    S.t = 0;
+    $("drop").hidden = true;
+    $("playBtn").disabled = false;
+    $("scrub").disabled = false;
+    $("renderBtn").disabled = false;
+    suggestDuration();
+    refresh();
+    status("Ready", pages.length + " pages / " + S.plat + " " + S.ar, "ready");
+    $("renderNote").textContent = "Press play to check the pacing, then render.";
+    $("renderNote").className = "note";
+  });
+}
+
+// Suggest a sane default: roughly 12s of reading time per page.
+function suggestDuration(){
+  var guess = Math.min(1800, Math.max(15, S.pages.length * 12));
+  guess = Math.round(guess/5)*5;
+  S.duration = guess;
+  $("duration").value = String(guess);
+  $("durLabel").textContent = fmtShort(guess);
+}
+
+function setControlsEnabled(on){
+  var ids = ["pdfInput","pageFrom","pageTo","duration","quality","fps","fit","margin",
+             "bgColor","accentColor","transition","musicInput","volume","titleText",
+             "subtitleText","outroText","cardSecs","watermark","easeEnds","fadeAudio",
+             "loopAudio","showCounter","showBar","playBtn","scrub"];
+  for (var i = 0; i < ids.length; i++){
+    var el = $(ids[i]); if (el) el.disabled = !on;
+  }
+  if (on && !S.pdf){ $("pageFrom").disabled = true; $("pageTo").disabled = true; }
+}
+
+/* ---------------- wiring ---------------- */
+var drop = $("drop");
+drop.addEventListener("click", function(){ $("pdfInput").click(); });
+$("pdfInput").addEventListener("change", function(e){ loadPDF(e.target.files[0]); });
+
+["dragenter","dragover"].forEach(function(ev){
+  document.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add("hot"); });
+});
+document.addEventListener("dragleave", function(e){
+  if (e.relatedTarget) return;
+  drop.classList.remove("hot");
+});
+document.addEventListener("drop", function(e){
+  e.preventDefault();
+  drop.classList.remove("hot");
+  if (e.dataTransfer && e.dataTransfer.files.length) loadPDF(e.dataTransfer.files[0]);
+});
+
+$("playBtn").addEventListener("click", function(){
+  if (S.playing) pausePreview(); else playPreview();
+});
+$("scrub").addEventListener("input", function(e){
+  pausePreview();
+  S.t = (+e.target.value/1000) * S.duration;
+  refresh();
+});
+
+var pageTimer;
+function onPageRange(){
+  clearTimeout(pageTimer);
+  pageTimer = setTimeout(function(){
+    S.from = +$("pageFrom").value || 1;
+    S.to = +$("pageTo").value || S.from;
+    if (S.to < S.from){ S.to = S.from; $("pageTo").value = S.to; }
+    rasterizePages();
+  }, 450);
+}
+$("pageFrom").addEventListener("input", onPageRange);
+$("pageTo").addEventListener("input", onPageRange);
+
+$("modes").addEventListener("click", function(e){
+  var b = e.target.closest(".mode"); if (!b) return;
+  var btns = $("modes").querySelectorAll(".mode");
+  for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-pressed", String(btns[i] === b));
+  S.mode = b.dataset.mode;
+  $("transitionField").hidden = S.mode !== "slide";
+  pausePreview(); refresh();
+});
+
+$("plats").addEventListener("click", function(e){
+  var b = e.target.closest(".plat"); if (!b) return;
+  var btns = $("plats").querySelectorAll(".plat");
+  for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-pressed", String(btns[i] === b));
+  S.ar = b.dataset.ar;
+  S.plat = b.textContent.replace(/\s*\d+:\d+\s*$/, "").trim();
+  pausePreview(); refresh();
+  if (S.pages.length) status("Ready", S.pages.length + " pages / " + S.plat + " " + S.ar, "ready");
+});
+
+function bind(id, key, transform, label, fmt){
+  var el = $(id); if (!el) return;
+  el.addEventListener("input", function(){
+    var v = el.type === "checkbox" ? el.checked : el.value;
+    S[key] = transform ? transform(v) : v;
+    if (label) $(label).textContent = fmt ? fmt(S[key]) : S[key];
+    if (id === "duration" && S.t > S.duration) S.t = S.duration;
+    pausePreview(); refresh();
+  });
+}
+bind("duration","duration",Number,"durLabel",fmtShort);
+bind("quality","quality",Number);
+bind("fps","fps",Number);
+bind("fit","fit");
+bind("margin","margin",Number,"marginLabel",function(v){ return v+"%"; });
+bind("bgColor","bg");
+bind("accentColor","accent");
+bind("transition","transition");
+bind("easeEnds","ease");
+bind("titleText","title");
+bind("subtitleText","subtitle");
+bind("outroText","outro");
+bind("cardSecs","cardSecs",Number,"cardLabel",function(v){ return v.toFixed(1)+"s"; });
+bind("watermark","watermark");
+bind("showCounter","counter");
+bind("showBar","bar");
+bind("volume","volume",function(v){ return +v/100; },"volLabel",function(v){ return Math.round(v*100)+"%"; });
+bind("fadeAudio","fadeAudio");
+bind("loopAudio","loopAudio");
+
+$("musicInput").addEventListener("change", function(e){
+  var f = e.target.files[0]; if (!f) return;
+  $("musicName").textContent = f.name;
+  f.arrayBuffer().then(function(buf){
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx.decodeAudioData(buf);
+  }).then(function(b){
+    S.music = b; S.musicName = f.name;
+    $("musicName").textContent = f.name + " / " + fmtShort(b.duration);
+  }).catch(function(){
+    $("musicName").textContent = "Could not read that audio file";
+    S.music = null;
+  });
+});
+
+$("renderBtn").addEventListener("click", function(){
+  if (S.rendering){ if (S.stopRender) S.stopRender(); return; }
+  render();
+});
+
+// The viewer sandbox does not allow a page to start its own download, so
+// the file is handed over through the downloads capability instead. When
+// that is unavailable (opened as a local file), fall back to a link.
+var downloader = null, downloaderReady = false;
+if (window.claude && typeof window.claude.use === "function"){
+  window.claude.use("downloads").then(function(d){
+    downloader = d; downloaderReady = true;
+  }).catch(function(){ downloaderReady = true; });
+} else {
+  downloaderReady = true;
+}
+
+function outName(){
+  var base = (S.title || "scrollcast")
+    .replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "scrollcast";
+  return base + "-" + S.plat.toLowerCase() + "." + (S.ext || "webm");
+}
+
+function legacySave(){
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(S.blob);
+  a.download = outName();
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+$("downloadBtn").addEventListener("click", function(){
+  if (!S.blob) return;
+  var btn = $("downloadBtn");
+  if (!downloader){ legacySave(); return; }
+  btn.disabled = true;
+  downloader.save({ filename: outName(), data: S.blob }).then(function(){
+    btn.disabled = false;
+    $("renderNote").textContent = "Saved. Upload it straight to " + S.plat + ".";
+    $("renderNote").className = "note";
+  }).catch(function(err){
+    btn.disabled = false;
+    var code = err && err.code;
+    if (code === "declined") return;
+    if (code === "rate_limited"){
+      $("renderNote").textContent = "A save prompt is already open. Try again in a moment.";
+    } else {
+      $("renderNote").textContent = "Saving is not available here. Use the video player above to save the file instead.";
+    }
+    $("renderNote").className = "note warn";
+  });
+});
+
+$("chaptersBtn").addEventListener("click", function(){
+  var c = $("chapters");
+  c.hidden = !c.hidden;
+  $("chaptersBtn").textContent = c.hidden ? "Show YouTube chapters" : "Hide YouTube chapters";
+});
+
+document.addEventListener("keydown", function(e){
+  if (/input|select|textarea/i.test(e.target.tagName)) return;
+  if (e.code === "Space" && S.pages.length && !S.rendering){
+    e.preventDefault();
+    if (S.playing) pausePreview(); else playPreview();
+  }
+});
+
+sizePreview();
+status("Waiting for a PDF", "", "");
+})();
+</script>

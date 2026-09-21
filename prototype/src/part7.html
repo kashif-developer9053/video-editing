@@ -1,0 +1,126 @@
+
+/* ---------------- cards & overlays ---------------- */
+function drawCard(ctx, o, title, sub, alpha){
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.textAlign = "center";
+  var base = Math.min(o.w, o.h);
+
+  ctx.fillStyle = S.accent;
+  ctx.font = "600 " + Math.round(base*0.075) + "px 'Barlow Condensed', sans-serif";
+  wrapText(ctx, title, o.w/2, o.h/2 - (sub ? base*0.045 : 0), o.w*0.82, base*0.09);
+
+  if (sub){
+    ctx.fillStyle = "#C9CEDA";
+    ctx.font = "400 " + Math.round(base*0.034) + "px Inter, sans-serif";
+    wrapText(ctx, sub, o.w/2, o.h/2 + base*0.065, o.w*0.75, base*0.045);
+  }
+  ctx.restore();
+}
+
+function wrapText(ctx, text, cx, cy, maxW, lineH){
+  var words = String(text).split(/\s+/), lines = [], line = "";
+  for (var i = 0; i < words.length; i++){
+    var test = line ? line + " " + words[i] : words[i];
+    if (ctx.measureText(test).width > maxW && line){ lines.push(line); line = words[i]; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  var startY = cy - (lines.length - 1) * lineH / 2;
+  for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], cx, startY + j*lineH);
+}
+
+function drawOverlays(ctx, o, pageNum, prog){
+  var base = Math.min(o.w, o.h);
+  var inset = Math.round(base * 0.028);
+
+  if (S.watermark){
+    ctx.save();
+    ctx.globalAlpha = .62;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "500 " + Math.round(base*0.024) + "px Inter, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 6;
+    ctx.fillText(S.watermark, inset, o.h - inset);
+    ctx.restore();
+  }
+
+  if (S.counter && S.pages.length){
+    var label = "Page " + pageNum + " / " + S.pages[S.pages.length-1].num;
+    ctx.save();
+    ctx.font = "500 " + Math.round(base*0.022) + "px 'JetBrains Mono', monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    var tw = ctx.measureText(label).width, ph = Math.round(base*0.042);
+    ctx.globalAlpha = .55; ctx.fillStyle = "#000000";
+    roundRect(ctx, o.w - inset - tw - ph*0.5, o.h - inset - ph, tw + ph*0.5, ph, ph*0.22);
+    ctx.fill();
+    ctx.globalAlpha = .95; ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(label, o.w - inset - ph*0.25, o.h - inset - ph*0.24);
+    ctx.restore();
+  }
+
+  if (S.bar){
+    var bh = Math.max(3, Math.round(o.h * 0.006));
+    ctx.save();
+    ctx.globalAlpha = .22; ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, o.h - bh, o.w, bh);
+    ctx.globalAlpha = 1; ctx.fillStyle = S.accent;
+    ctx.fillRect(0, o.h - bh, o.w * Math.min(1, Math.max(0, prog)), bh);
+    ctx.restore();
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+/* ---------------- preview ---------------- */
+var pv = $("preview"), pvCtx = pv.getContext("2d");
+
+function sizePreview(){
+  var o = outSize();
+  pv.width = o.w; pv.height = o.h;
+  pv.style.aspectRatio = o.w + " / " + o.h;
+}
+
+function refresh(){
+  if (!S.pages.length) return;
+  L = layout();
+  sizePreview();
+  drawFrame(pvCtx, S.t);
+  $("tcNow").textContent = fmtTC(S.t);
+  $("tcTotal").textContent = fmtTC(S.duration);
+  $("scrub").value = String(Math.round(S.t / S.duration * 1000));
+}
+
+function tick(now){
+  if (!S.playing) return;
+  var dt = (now - S.lastTick) / 1000;
+  S.lastTick = now;
+  S.t += dt;
+  if (S.t >= S.duration){ S.t = S.duration; pausePreview(); refresh(); return; }
+  refresh();
+  S.raf = requestAnimationFrame(tick);
+}
+
+function playPreview(){
+  if (!S.pages.length) return;
+  if (S.t >= S.duration) S.t = 0;
+  S.playing = true;
+  S.lastTick = performance.now();
+  $("playIcon").innerHTML = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  $("playBtn").setAttribute("aria-label", "Pause preview");
+  S.raf = requestAnimationFrame(tick);
+}
+function pausePreview(){
+  S.playing = false;
+  cancelAnimationFrame(S.raf);
+  $("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+  $("playBtn").setAttribute("aria-label", "Play preview");
+}
