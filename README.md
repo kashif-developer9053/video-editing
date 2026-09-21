@@ -30,13 +30,13 @@ that `npm run dev` prints and add that IP to `allowedDevOrigins` in
 
 | Mode | What it does | Speed |
 | --- | --- | --- |
-| **Slide** | Holds each page, pans down it, then moves on | Fastest — held frames are reused |
-| **Continuous** | One long strip, scrolling without stopping | Slowest — every frame differs |
-| **Slow zoom** | Holds each page with a gentle drift | Slow |
-| **Auto pace** | Scrolls, but lingers on pages with more text | Slow |
+| **One page at a time** | Holds each page, pans down it, then moves on | Fastest — held frames are reused |
+| **Non-stop scroll** | One long strip, scrolling without stopping | Fast — the strip is drawn once |
+| **Slow zoom** | Holds each page with a gentle drift | Slowest — the scale changes every frame |
+| **Smart speed** | Scrolls, lingering on pages with more on them | Fast |
 
-Slide is the default because it is both the fastest to render and the easiest
-to read.
+"One page at a time" is the default: it is the quickest to render and the
+easiest to read.
 
 ## Why it is quick
 
@@ -44,16 +44,27 @@ The renderer avoids drawing frames it has already drawn. In slide mode a page
 sits still for seconds, so those frames are identical and the encoder is handed
 the same buffer again — typically 45–75% of frames in a slide video.
 
-Two settings cost the most:
+Scrolling modes cannot reuse frames — the camera moves every frame — so they
+take a different route: the whole column of pages is drawn once into a tall
+strip, and each frame becomes a single copy of the visible slice. Measured on
+a 10-minute 1080p scroll, that took compositing from 13.2 minutes to 4.7.
 
-- **Continuous and slow-zoom modes** move every frame, so nothing is reusable.
+Two settings still cost real time:
+
+- **Slow zoom** changes scale every frame, so neither trick applies to it.
 - **The progress bar** advances constantly. It is quantised to 4-pixel steps,
-  which keeps most of the reuse; without that it alone would drop slide-mode
-  reuse from about 75% to 8%.
+  which keeps most of the reuse; without that it alone would drop the
+  one-page-at-a-time reuse from about 75% to 8%.
 
 The encoder is picked per job. Hardware encoding (Quick Sync, NVENC, AMF) is
-used at 1080p and above, where it wins; at 720p `libx264 -preset ultrafast` is
-actually faster because hardware encoders pay a fixed setup cost.
+used at 1080p and above, where it wins — 32s against 41s for 1800 frames on
+this machine. At 720p `libx264 -preset veryfast` is faster, because hardware
+encoders pay a fixed setup cost that a small frame never earns back.
+
+Both paths target a similar quality, which matters: an earlier build used
+`ultrafast` for software encoding only, and produced files roughly 2.7x
+larger — large enough that a 720p video could come out bigger than the same
+video at 1080p.
 
 ## Layout
 

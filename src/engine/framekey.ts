@@ -13,7 +13,7 @@
  * difference cannot be seen.
  */
 
-import { cardTiming, pageAtProgress } from "./layout";
+import { autopaceDistance, cardTiming, easeEnds, pageAtProgress } from "./layout";
 import {
   pageScale,
   panDistance,
@@ -45,16 +45,24 @@ export function frameKey(time: number, fc: FrameContext): string {
   const bodyTime = Math.min(timing.body, Math.max(0, time - timing.intro));
   const progress = timing.body > 0 ? bodyTime / timing.body : 0;
 
-  // Scrolling modes move the camera every frame, so nothing ever repeats.
-  if (settings.mode === "scroll" || settings.mode === "autopace") {
-    return `scroll:${time.toFixed(4)}`;
-  }
-
   // Quantised to the same steps the compositor draws, so a held page still
   // reuses between bar steps instead of every frame being unique.
   const barPart = settings.showProgressBar
     ? `:b${Math.round(quantizeBar(time / Math.max(1, settings.duration), layout.out.width))}`
     : "";
+
+  // Scrolling frames differ only by where the camera sits. On a long slow
+  // scroll it can advance less than a pixel per frame, and those frames are
+  // identical — so the key is the camera position in whole pixels, not the
+  // timestamp.
+  if (settings.mode === "scroll" || settings.mode === "autopace") {
+    const travel = Math.max(0, layout.totalHeight - layout.out.height);
+    let p = progress;
+    if (settings.mode === "autopace") p = autopaceDistance(progress, layout, weights);
+    else if (settings.ease) p = easeEnds(progress);
+    const camY = Math.round(travel > 0 ? p * travel : 0);
+    return `scroll:${camY}${barPart}`;
+  }
 
   const { index, local } = pageAtProgress(progress, weights);
   const box = layout.boxes[index];

@@ -57,6 +57,15 @@ export interface FrameContext {
   layout: Layout;
   weights: number[];
   settings: Settings;
+  /**
+   * Optional pre-rendered scroll strip. When present, a scrolling frame is
+   * one blit of the visible slice instead of redrawing every visible page.
+   * The preview leaves this unset; the renderer supplies it.
+   */
+  strip?: {
+    height: number;
+    draw: (ctx: Ctx, cameraY: number, out: OutputSize) => void;
+  } | null;
 }
 
 export function prepareFrameContext(
@@ -124,16 +133,36 @@ function drawScroll(ctx: Ctx, out: OutputSize, progress: number, fc: FrameContex
   }
 
   // A strip shorter than the frame has nowhere to travel, so centre it.
-  const camY = travel > 0 ? p * travel : -(out.height - layout.totalHeight) / 2;
+  // Rounded to whole pixels because the pre-rendered strip can only be
+  // blitted at integer offsets: leaving this fractional makes the two paths
+  // disagree by a pixel, which shows up as text shimmering as it scrolls.
+  const camY = Math.round(
+    travel > 0 ? p * travel : -(out.height - layout.totalHeight) / 2,
+  );
   let shown = layout.boxes[0]?.page.num ?? 1;
+
+  // Whichever page fills most of the frame is "the page you are reading".
+  // A single sample point instead sticks on the previous page whenever the
+  // gap between pages happens to sit on it.
+  let bestVisible = -1;
+  for (const box of layout.boxes) {
+    const y = box.y - camY;
+    const visible = Math.min(out.height, y + box.height) - Math.max(0, y);
+    if (visible > bestVisible) {
+      bestVisible = visible;
+      shown = box.page.num;
+    }
+  }
+
+  if (fc.strip) {
+    fc.strip.draw(ctx, camY, out);
+    return shown;
+  }
 
   for (const box of layout.boxes) {
     const y = box.y - camY;
     if (y > out.height || y + box.height < 0) continue;
-    // Whatever sits at 45% down the frame is "the page you are reading".
-    const mark = out.height * 0.45;
-    if (y <= mark && y + box.height >= mark) shown = box.page.num;
-    drawPage(ctx, box.page, box.x, y, box.width, box.height);
+    drawPageInto(ctx, box.page, box.x, y, box.width, box.height);
   }
   return shown;
 }
@@ -316,7 +345,7 @@ function drawFitted(
 
   ctx.save();
   ctx.globalAlpha = alpha;
-  drawPage(ctx, page, x, y, width, height);
+  drawPageInto(ctx, page, x, y, width, height);
   ctx.restore();
 }
 
@@ -342,7 +371,7 @@ function drawKenBurns(
 
   ctx.save();
   ctx.globalAlpha = alpha;
-  drawPage(ctx, page, (out.width - width) / 2, y, width, height);
+  drawPageInto(ctx, page, (out.width - width) / 2, y, width, height);
   ctx.restore();
 }
 
@@ -355,7 +384,7 @@ function drawKenBurns(
  * rectangle, a few translucent offset rectangles read almost identically at
  * playback size for well under a millisecond.
  */
-function drawPage(
+export function drawPageInto(
   ctx: Ctx,
   page: DrawablePage,
   x: number,

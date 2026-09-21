@@ -16,6 +16,7 @@ import { createCanvas, frameBytes, isTightlyPacked } from "./canvas";
 import { encoderFor, startEncoder } from "./ffmpeg";
 import { prescalePages } from "./prescale";
 import { rasterizePdf, releasePages } from "./raster";
+import { buildStrip, drawStripSlice, releaseStrip, type Strip } from "./strip";
 
 export interface RenderInput {
   pdf: Uint8Array;
@@ -75,6 +76,8 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
     throw new Error("No pages were selected.");
   }
 
+  let strip: Strip | null = null;
+
   // Resample each page once to the size it will be drawn at, so the frame
   // loop is blitting rather than rescaling. Worth roughly 3x on a render.
   prescalePages(pages, settings);
@@ -82,7 +85,22 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
   try {
     /* ---- 2. set up compositing ---- */
     const layoutResult = layout(pages, settings);
+
+    // Scrolling modes move a camera down an unchanging column of pages, so
+    // the column is drawn once and each frame becomes a single blit. Without
+    // this, every frame redraws every visible page and a scrolling video
+    // costs several times what a slide one does.
+    const scrolling = settings.mode === "scroll" || settings.mode === "autopace";
+    strip = scrolling ? buildStrip(layoutResult, settings.background) : null;
+
     const fc = prepareFrameContext(layoutResult, pages, settings);
+    if (strip) {
+      const held = strip;
+      fc.strip = {
+        height: held.height,
+        draw: (c, cameraY, o) => drawStripSlice(c as never, held, cameraY, o),
+      };
+    }
 
     const canvas = createCanvas(out.width, out.height);
     const ctx = canvas.getContext("2d");
@@ -189,8 +207,9 @@ export async function renderVideo(input: RenderInput): Promise<RenderOutput> {
       elapsedSeconds,
     };
   } finally {
-    // Always drop the bitmaps, including on failure — 50 rasterized pages
-    // is the largest thing this process holds.
+    // Always drop the bitmaps, including on failure — the rasterized pages
+    // and the scroll strip are the largest things this process holds.
+    releaseStrip(strip);
     releasePages(pages);
   }
 }

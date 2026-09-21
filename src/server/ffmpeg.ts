@@ -151,7 +151,9 @@ export function startEncoder(opts: EncodeOptions): FrameSink {
       if (exited) return Promise.reject(exitError ?? new Error("ffmpeg closed early"));
       return new Promise((resolve, reject) => {
         // Respect backpressure: without this, a fast compositor buries the
-        // encoder and memory climbs until the process dies.
+        // encoder and memory climbs until the process dies. Letting frames
+        // queue instead was measured slower, not faster — at ~8MB a frame
+        // the memory pressure costs more than the wait saves.
         const ok = proc.stdin.write(frame, (err) => {
           if (err) reject(err);
           else if (ok) resolve();
@@ -194,12 +196,22 @@ function buildArgs(opts: EncodeOptions): string[] {
 
   if (opts.encoder.hardware) {
     // Hardware encoders take a quality target rather than a speed preset.
-    args.push("-global_quality", "26", "-look_ahead", "0");
+    args.push("-global_quality", "25", "-look_ahead", "0");
   } else {
-    // For flat text, ultrafast is visually indistinguishable from medium
-    // and several times quicker on a low-power CPU.
-    args.push("-preset", "ultrafast", "-crf", "23");
+    // veryfast, not ultrafast. Measured on scrolling page content, ultrafast
+    // produced files about 2.7x larger for roughly a third less encode time
+    // — a bad trade when the file is going to be uploaded. It is also why a
+    // 720p video could come out larger than the same video at 1080p, since
+    // the two resolutions were using different encoders.
+    args.push("-preset", "veryfast", "-crf", "24");
   }
+
+  // Cap the bitrate so a scrolling video, where every frame differs, cannot
+  // balloon. 6 Mbit at 1080p and 3 at 720p is well above what a page of text
+  // needs and still comfortably inside what the platforms re-encode to.
+  const megapixels = (opts.width * opts.height) / 1_000_000;
+  const maxRate = Math.round(Math.max(2500, Math.min(8000, megapixels * 3000)));
+  args.push("-maxrate", `${maxRate}k`, "-bufsize", `${maxRate * 2}k`);
 
   args.push("-pix_fmt", "yuv420p", "-movflags", "+faststart");
 
