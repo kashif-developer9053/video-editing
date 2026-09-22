@@ -41,9 +41,30 @@ interface CanvasModule {
 
 let cached: CanvasModule | null = null;
 
+/**
+ * Resolve the same node-canvas that pdfjs uses.
+ *
+ * pdfjs-dist installs its own nested copy (2.11.2 against our 3.2.3), and a
+ * native canvas only accepts objects created by its own build: hand a 3.x
+ * Canvas to a 2.x drawImage and it throws "Image or Canvas expected". pdfjs
+ * allocates scratch canvases for images through its copy, so ours has to be
+ * that copy too or every PDF containing an image fails.
+ */
 function mod(): CanvasModule {
-  if (!cached) cached = require("canvas") as CanvasModule;
-  return cached;
+  if (cached) return cached;
+
+  // pdfjs's nested copy first, so both halves agree; the top-level install
+  // is the fallback for when npm has deduped them into one.
+  for (const id of ["pdfjs-dist/node_modules/canvas", "canvas"]) {
+    try {
+      cached = require(id) as CanvasModule;
+      return cached;
+    } catch {
+      // try the next one
+    }
+  }
+
+  throw new Error("node-canvas is not installed. Run `npm install`.");
 }
 
 export function createCanvas(width: number, height: number): ServerCanvas {
