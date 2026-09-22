@@ -13,7 +13,6 @@
  */
 
 import { createRequire } from "node:module";
-import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
@@ -43,40 +42,17 @@ interface CanvasModule {
 let cached: CanvasModule | null = null;
 
 /**
- * Resolve the same node-canvas that pdfjs uses.
+ * node-canvas, pinned to the version pdfjs expects.
  *
- * pdfjs-dist installs its own nested copy (2.11.2 against our 3.2.3), and a
- * native canvas only accepts objects created by its own build: hand a 3.x
- * Canvas to a 2.x drawImage and it throws "Image or Canvas expected". pdfjs
- * allocates scratch canvases for images through its copy, so ours has to be
- * that copy too or every PDF containing an image fails.
+ * pdfjs-dist declares canvas ^2.11.2 as an optional dependency. Depending on
+ * a 3.x here made npm install a second, nested copy for pdfjs — and a native
+ * canvas only accepts objects from its own build, so the scratch canvases
+ * pdfjs created for images were rejected by our context with "Image or
+ * Canvas expected". Matching the version keeps it to one copy.
  */
 function mod(): CanvasModule {
-  if (cached) return cached;
-
-  // pdfjs's nested copy first, so both halves agree; the top-level install
-  // is the fallback for when npm has deduped them into one. Resolved from
-  // pdfjs's own location rather than written as a bare specifier, because
-  // the bundler cannot statically analyse a nested path and fails the build
-  // with "non-ecmascript placeable asset".
-  const candidates: string[] = [];
-  try {
-    candidates.push(require.resolve("canvas", { paths: [path.dirname(require.resolve("pdfjs-dist/package.json"))] }));
-  } catch {
-    // pdfjs may not carry its own copy; the plain one below covers that.
-  }
-  candidates.push("canvas");
-
-  for (const id of candidates) {
-    try {
-      cached = require(id) as CanvasModule;
-      return cached;
-    } catch {
-      // try the next one
-    }
-  }
-
-  throw new Error("node-canvas is not installed. Run `npm install`.");
+  if (!cached) cached = require("canvas") as CanvasModule;
+  return cached;
 }
 
 export function createCanvas(width: number, height: number): ServerCanvas {

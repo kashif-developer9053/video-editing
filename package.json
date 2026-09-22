@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
-    "canvas": "^3.2.3",
+    "canvas": "2.11.2",
     "nanoid": "^6.0.1",
     "next": "16.3.5",
     "pdfjs-dist": "^3.11.174",
@@ -29,5 +29,8 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "overrides": {
+    "canvas": "2.11.2"
   }
 }
