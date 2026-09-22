@@ -84,7 +84,16 @@ say "Installing dependencies (node-canvas compiles here, give it a minute)"
 npm ci
 
 say "Building"
-npm run build
+# set -e already aborts here, but say so plainly: the script stopping before
+# it reaches pm2 is exactly why "pm2 restart" later reports the process does
+# not exist, which reads as a pm2 problem rather than a build one.
+if ! npm run build; then
+  echo
+  echo "The build failed, so the app was not started."
+  echo "Fix the error above, then run:"
+  echo "  cd $APP_DIR && npm run build && pm2 start npm --name $APP_NAME -- start && pm2 save"
+  exit 1
+fi
 
 say "Starting under pm2 on port $APP_PORT"
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true

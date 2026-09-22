@@ -144,6 +144,16 @@ sudo nginx -t                     # nginx config
 sudo tail -50 /var/log/nginx/error.log
 ```
 
+**`pm2 restart` says the process was not found.** pm2 has no record of it —
+usually because the daemon was restarted, or setup.sh stopped at a failed
+build before it got that far. Start it instead:
+
+```bash
+cd ~/apps/scrollcast
+pm2 start npm --name scrollcast -- start
+pm2 save
+```
+
 **Renders fail.** Almost always FFmpeg:
 
 ```bash

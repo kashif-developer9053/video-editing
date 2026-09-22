@@ -48,7 +48,16 @@ say "Building"
 npm run build
 
 say "Restarting"
-pm2 restart "$APP_NAME" --update-env
+# Start rather than restart when pm2 has no record of the process. That is
+# the normal state after the pm2 daemon has been restarted or the server
+# rebooted without a saved process list, and "pm2 restart" simply fails with
+# "Process or Namespace not found" instead of bringing the app up.
+if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  pm2 restart "$APP_NAME" --update-env
+else
+  say "pm2 has no '$APP_NAME' process, starting a new one"
+  pm2 start npm --name "$APP_NAME" -- start
+fi
 pm2 save >/dev/null 2>&1 || true
 
 say "Deployed ${AFTER:0:7}"
