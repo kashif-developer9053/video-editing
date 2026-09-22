@@ -6,6 +6,11 @@ platform aspect ratios and title cards.
 Rendering happens on the machine running the server, using native FFmpeg. The
 finished file is deleted as soon as it has been downloaded.
 
+> **This needs a real Node server.** It runs FFmpeg as a child process and
+> writes files to disk, so it will not run on Vercel, Netlify or any other
+> serverless host. To put it online, see **[deploy/README.md](deploy/README.md)** —
+> one script sets up a VPS, and pushes to `main` deploy themselves.
+
 ## Running it
 
 You need [Node](https://nodejs.org) 20+ and FFmpeg on your PATH.
@@ -123,13 +128,15 @@ touching the callers.
 
 ## Deploying
 
-This needs a Node server with FFmpeg installed — not a static host. Copy the
-project to the machine, install FFmpeg, then:
+Full instructions are in **[deploy/README.md](deploy/README.md)**: one script
+to set up an Ubuntu VPS, an nginx config, HTTPS, and a GitHub Actions workflow
+that redeploys on every push to `main`.
+
+The short version, on a fresh server:
 
 ```bash
-npm ci
-npm run build
-npm start
+curl -fsSL https://raw.githubusercontent.com/kashif-developer9053/video-editing/main/deploy/setup.sh -o setup.sh
+bash setup.sh
 ```
 
 Video encoding is CPU-bound and does not share well: each render occupies a
