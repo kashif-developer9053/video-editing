@@ -13,6 +13,7 @@
  */
 
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
@@ -54,8 +55,19 @@ function mod(): CanvasModule {
   if (cached) return cached;
 
   // pdfjs's nested copy first, so both halves agree; the top-level install
-  // is the fallback for when npm has deduped them into one.
-  for (const id of ["pdfjs-dist/node_modules/canvas", "canvas"]) {
+  // is the fallback for when npm has deduped them into one. Resolved from
+  // pdfjs's own location rather than written as a bare specifier, because
+  // the bundler cannot statically analyse a nested path and fails the build
+  // with "non-ecmascript placeable asset".
+  const candidates: string[] = [];
+  try {
+    candidates.push(require.resolve("canvas", { paths: [path.dirname(require.resolve("pdfjs-dist/package.json"))] }));
+  } catch {
+    // pdfjs may not carry its own copy; the plain one below covers that.
+  }
+  candidates.push("canvas");
+
+  for (const id of candidates) {
     try {
       cached = require(id) as CanvasModule;
       return cached;
