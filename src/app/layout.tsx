@@ -25,8 +25,41 @@ const mono = JetBrains_Mono({
  * Set this to the real address before going public — Open Graph images and
  * canonical URLs have to be absolute, and search engines treat a wrong
  * canonical as a pointer to someone else's page.
+ *
+ * Validated rather than trusted: `new URL()` throws on a malformed value and
+ * that happens at build time, inside metadata collection, where the error
+ * surfaces as "Failed to collect page data for /_not-found" with no mention
+ * of the variable that caused it. A bare IPv6 address is the easy way to hit
+ * this, since a URL needs it bracketed as http://[::1]:3001.
  */
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+function resolveSiteUrl(): string {
+  const fallback = "http://localhost:3000";
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!raw) return fallback;
+
+  try {
+    return new URL(raw).toString().replace(/\/$/, "");
+  } catch {
+    // Retry with the host bracketed, in case it is an unbracketed IPv6.
+    const ipv6 = raw.match(/^(https?:\/\/)([0-9a-f:]+:[0-9a-f:]*)(:(\d+))?$/i);
+    if (ipv6) {
+      const [, scheme, host, , port] = ipv6;
+      try {
+        return new URL(`${scheme}[${host}]${port ? `:${port}` : ""}`).toString().replace(/\/$/, "");
+      } catch {
+        // fall through
+      }
+    }
+    console.warn(
+      `[scrollcast] NEXT_PUBLIC_SITE_URL is not a valid URL: ${raw} — ` +
+        `falling back to ${fallback}. Set it to your real address, ` +
+        `for example https://video.example.com`,
+    );
+    return fallback;
+  }
+}
+
+const siteUrl = resolveSiteUrl();
 
 const title = "Scrollcast — Turn a PDF into a video";
 const description =

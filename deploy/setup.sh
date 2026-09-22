@@ -55,14 +55,27 @@ cd "$APP_DIR"
 
 say "Writing .env"
 if [ ! -f .env ]; then
+  # Ask specifically for IPv4. A server that answers with IPv6 gives back a
+  # bare address like 2a02:4780:75:d63c::1, and gluing ":$APP_PORT" onto that
+  # produces a string no URL parser accepts — the build then fails with
+  # "Failed to collect page data for /_not-found", which says nothing about
+  # the cause.
+  PUBLIC_IP="$(curl -fsS --max-time 5 -4 ifconfig.me 2>/dev/null || true)"
+  if printf '%s' "$PUBLIC_IP" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+    SITE_URL="http://$PUBLIC_IP:$APP_PORT"
+  else
+    SITE_URL="http://localhost:$APP_PORT"
+  fi
+
   cat > .env <<ENVEOF
-# Change SITE_URL to your real domain before you share the link: canonical
-# URLs and share previews are built from it.
-NEXT_PUBLIC_SITE_URL=http://$(curl -fsS --max-time 5 ifconfig.me 2>/dev/null || echo localhost):$APP_PORT
+# Point this at your real domain before sharing the link. Canonical URLs, the
+# sitemap and link previews are all built from it, so a wrong value gets
+# indexed as a broken link.
+NEXT_PUBLIC_SITE_URL=$SITE_URL
 PORT=$APP_PORT
 NODE_ENV=production
 ENVEOF
-  echo "wrote $APP_DIR/.env"
+  echo "wrote $APP_DIR/.env with NEXT_PUBLIC_SITE_URL=$SITE_URL"
 else
   echo ".env already exists, leaving it alone"
 fi
