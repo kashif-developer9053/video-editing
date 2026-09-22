@@ -43,8 +43,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         // A default here so a missing .env cannot silently fall back to
-        // 3000 and collide with another site.
-        PORT: env.PORT || "3001",
+        // Next's own 3000, which on a shared server is usually taken.
+        PORT: env.PORT || "3009",
         ...env,
       },
       // Renders are long-running; do not kill the process for being busy.

@@ -13,7 +13,11 @@ set -euo pipefail
 
 # ---- settings you may want to change -----------------------------------
 APP_NAME="${APP_NAME:-scrollcast}"
-APP_PORT="${APP_PORT:-3001}"          # 3000 is probably taken by another app
+# Chosen at run time from the ports nothing is listening on. A fixed default
+# is how this went wrong the first time: 3001 looked free in the abstract and
+# was already serving another site, so the app died with EADDRINUSE and pm2
+# restarted it eighteen times.
+APP_PORT="${APP_PORT:-}"
 REPO="${REPO:-https://github.com/kashif-developer9053/video-editing.git}"
 BRANCH="${BRANCH:-main}"
 APP_DIR="${APP_DIR:-$HOME/apps/$APP_NAME}"
@@ -21,6 +25,17 @@ NODE_MAJOR="${NODE_MAJOR:-22}"
 # ------------------------------------------------------------------------
 
 say() { printf '\n\033[1;33m==> %s\033[0m\n' "$1"; }
+
+if [ -z "$APP_PORT" ]; then
+  for candidate in 3009 3010 3011 3012 3013 3014; do
+    if ! ss -tulpnH "sport = :$candidate" 2>/dev/null | grep -q .; then
+      APP_PORT="$candidate"
+      break
+    fi
+  done
+  APP_PORT="${APP_PORT:-3009}"
+fi
+echo "Using port $APP_PORT"
 
 say "Installing system packages"
 sudo apt-get update -qq
