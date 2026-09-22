@@ -19,6 +19,7 @@ import { predictSeconds } from "@/engine/estimate";
 import { DEFAULT_SETTINGS, type DrawablePage, type Settings } from "@/engine/types";
 import { createCanvas } from "@/server/canvas";
 import { detectEncoder } from "@/server/ffmpeg";
+import { finishProgress, reportProgress, startProgress } from "@/server/progress";
 import { rasterizePdf, releasePages } from "@/server/raster";
 
 export const runtime = "nodejs";
@@ -70,6 +71,10 @@ export async function POST(request: Request) {
   const time = Number(form.get("time") ?? 0);
   const out = outputSize(settings);
 
+  // The browser cannot know the cache key before the file is read, so it
+  // sends an id of its own and polls progress under that.
+  const trackingId = typeof form.get("track") === "string" ? String(form.get("track")) : null;
+
   const pdfFile = form.get("pdf");
   const providedKey = form.get("key");
 
@@ -84,25 +89,39 @@ export async function POST(request: Request) {
     // Re-rasterize whenever the page bitmaps would be sized differently.
     if (!entry || entry.shape !== shapeOf(settings)) {
       if (entry) releasePages(entry.pages);
-      const result = await rasterizePdf({
-        data: bytes,
-        pageFrom: settings.pageFrom,
-        pageTo: settings.pageTo,
-        outputWidth: drawnPageWidth(settings),
-      });
+
+      // The client polls /api/preview/progress with this same key while the
+      // request runs, so a long document can show how far along it is
+      // instead of an empty screen.
+      const expected = Math.max(1, settings.pageTo - settings.pageFrom + 1);
+      if (trackingId) startProgress(trackingId, expected);
+
+      try {
+        const result = await rasterizePdf({
+          data: bytes,
+          pageFrom: settings.pageFrom,
+          pageTo: settings.pageTo,
+          outputWidth: drawnPageWidth(settings),
+          onProgress: (done, total) => {
+            if (trackingId) reportProgress(trackingId, done, total);
+          },
+        });
       // Deliberately NOT prescaled. Prescaling costs about 600ms and saves
       // ~170ms on every frame drawn, which is a huge win across a whole
       // render but pure delay for a preview that draws one frame. The
       // compositor scales identically either way, so the picture is the
       // same; only the sharpness of the downscale differs, invisibly.
-      entry = {
-        pages: result.pages,
-        documentPages: result.documentPages,
-        shape: shapeOf(settings),
-        touchedAt: Date.now(),
-      };
-      cache.set(key, entry);
-      evictStale();
+        entry = {
+          pages: result.pages,
+          documentPages: result.documentPages,
+          shape: shapeOf(settings),
+          touchedAt: Date.now(),
+        };
+        cache.set(key, entry);
+        evictStale();
+      } finally {
+        if (trackingId) finishProgress(trackingId);
+      }
     }
   } else if (typeof providedKey === "string") {
     key = providedKey;

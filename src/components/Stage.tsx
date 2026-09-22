@@ -120,7 +120,22 @@ export function Stage({
           />
         ) : null}
 
-        {!source ? (
+        {status === "loading" && !preview ? (
+          <div className="absolute inset-3 flex flex-col items-center justify-center gap-3 rounded-lg bg-stage/80 text-center">
+            <span
+              aria-hidden
+              className="h-8 w-8 animate-spin rounded-full border-2 border-rule border-t-accent"
+            />
+            <span className="text-sm font-medium text-ink">{statusText}</span>
+            {statusMeta ? <span className="text-xs text-muted">{statusMeta}</span> : null}
+            <span className="max-w-[32ch] text-xs text-dim">
+              Long documents take a moment. Nothing is uploaded — this is happening on the server
+              that hosts the site.
+            </span>
+          </div>
+        ) : null}
+
+        {!source && status !== "loading" ? (
           <button
             type="button"
             onClick={() => fileInput.current?.click()}

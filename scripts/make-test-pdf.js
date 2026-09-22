@@ -9,7 +9,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PAGE_COUNT = 6;
+const PAGE_COUNT = Number(process.argv[2]) || 6;
 
 function escapeText(s) {
   return s.replace(/([()\\])/g, "\\$1");
@@ -80,6 +80,6 @@ function buildPdf(pageCount) {
   return pdf;
 }
 
-const out = path.join(__dirname, "..", "test-sample.pdf");
+const out = path.join(__dirname, "..", process.argv[3] || "test-sample.pdf");
 fs.writeFileSync(out, buildPdf(PAGE_COUNT), "latin1");
 console.log(`Wrote ${out} (${PAGE_COUNT} pages)`);

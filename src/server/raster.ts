@@ -16,6 +16,9 @@ import type { DrawablePage } from "@/engine/types";
 import { createCanvas } from "./canvas";
 
 
+/** Pages to rasterize between handing the event loop back. */
+const YIELD_EVERY = 4;
+
 /** Cap the raster scale so one huge page cannot blow up memory alone. */
 const MAX_SCALE = 3.0;
 /**
@@ -272,6 +275,18 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
       // document holds every page's operator list at once.
       page.cleanup();
       opts.onProgress?.(pages.length, total);
+
+      // Hand the event loop back periodically. pdfjs rasterizes on the main
+      // thread, so without this a long document blocks the server outright
+      // and the browser's progress polls all queue up, arriving together
+      // once the work is already done.
+      //
+      // Every page measured twice as slow overall — the yield costs more
+      // than the page does on a simple document. Every few pages keeps the
+      // server answering without that penalty.
+      if (pages.length % YIELD_EVERY === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
   } finally {
     await doc.destroy();

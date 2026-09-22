@@ -65,9 +65,37 @@ export function Studio() {
       const form = new FormData();
       form.set("settings", JSON.stringify(settings));
       form.set("time", String(time));
-      // Send the file only when the server has no cached pages for it.
+      // Sending the file means the server has to rasterize every page, which
+      // on a long document takes a while; a tracking id lets us show how far
+      // along it is. With a cached key there is nothing to wait for.
+      const track = previewKey ? null : `prev-${seq}-${Date.now()}`;
       if (previewKey) form.set("key", previewKey);
       else form.set("pdf", source.file);
+      if (track) form.set("track", track);
+
+      let polling = !!track;
+      if (track) {
+        void (async () => {
+          while (polling) {
+            await new Promise((r) => setTimeout(r, 400));
+            if (!polling) break;
+            try {
+              const res = await fetch(`/api/preview/progress?key=${encodeURIComponent(track)}`);
+              if (!res.ok) continue;
+              const p = (await res.json()) as { done: number; total: number; finished: boolean };
+              if (!polling || p.finished) break;
+              // Only speak up once there is enough work to be worth reporting.
+              if (p.total > 3 && seq === previewSeq.current) {
+                setStatus("loading");
+                setStatusText("Getting your pages ready");
+                setStatusMeta(`reading page ${p.done} of ${p.total}`);
+              }
+            } catch {
+              // A failed poll is not worth surfacing; the real request runs on.
+            }
+          }
+        })();
+      }
 
       try {
         const res = await fetch("/api/preview", { method: "POST", body: form });
@@ -100,10 +128,17 @@ export function Studio() {
           new CustomEvent("scrollcast:preview", { detail: URL.createObjectURL(blob) }),
         );
         setError(null);
+        if (track && seq === previewSeq.current) {
+          setStatus("ready");
+          setStatusText("Ready");
+          setStatusMeta("");
+        }
       } catch (err) {
         if (seq === previewSeq.current) {
           setError(err instanceof Error ? err.message : "Could not show a preview.");
         }
+      } finally {
+        polling = false;
       }
     };
 
@@ -135,10 +170,33 @@ export function Studio() {
       const unreadable = "Could not read that PDF. It may be damaged or password protected.";
 
       // One probe render tells us the page count and warms the server cache.
+      // A tracking id goes with it so the poll below can report how far
+      // through the document the server is — on a hundred pages this is the
+      // difference between a progress line and a blank screen.
+      const track = `open-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const form = new FormData();
       form.set("pdf", file);
       form.set("settings", JSON.stringify({ ...settings, pageFrom: 1, pageTo: 1 }));
       form.set("time", "0");
+      form.set("track", track);
+
+      let polling = true;
+      const poll = async () => {
+        while (polling) {
+          await new Promise((r) => setTimeout(r, 400));
+          if (!polling) break;
+          try {
+            const res = await fetch(`/api/preview/progress?key=${encodeURIComponent(track)}`);
+            if (!res.ok) continue;
+            const p = (await res.json()) as { done: number; total: number; finished: boolean };
+            if (!polling || p.finished) break;
+            if (p.total > 1) setStatusMeta(`reading page ${p.done} of ${p.total}`);
+          } catch {
+            // A failed poll is not worth surfacing; the real request still runs.
+          }
+        }
+      };
+      void poll();
 
       try {
         const res = await fetch("/api/preview", { method: "POST", body: form });
@@ -157,6 +215,8 @@ export function Studio() {
         setStatusText("Could not open that file");
         setStatusMeta("");
         setError(err instanceof Error ? err.message : unreadable);
+      } finally {
+        polling = false;
       }
     },
     [settings, setSource, setPreviewKey],
