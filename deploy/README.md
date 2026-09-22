@@ -150,7 +150,7 @@ build before it got that far. Start it instead:
 
 ```bash
 cd ~/apps/scrollcast
-pm2 start npm --name scrollcast -- start
+pm2 start ecosystem.config.js
 pm2 save
 ```
 
@@ -175,6 +175,17 @@ cd ~/apps/scrollcast && npm rebuild canvas && pm2 restart scrollcast
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+**`EADDRINUSE: address already in use :::3000`.** The app is not reading
+`.env`, so it fell back to port 3000 and hit another site. Always start it
+through the config file, which loads `.env` itself:
+
+```bash
+cd ~/apps/scrollcast
+pm2 delete all
+pm2 start ecosystem.config.js
+pm2 save
 ```
 
 **Port already taken.** See what has it and pick another:

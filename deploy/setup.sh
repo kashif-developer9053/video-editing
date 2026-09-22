@@ -97,7 +97,11 @@ fi
 
 say "Starting under pm2 on port $APP_PORT"
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-pm2 start npm --name "$APP_NAME" -- start
+# Started through ecosystem.config.js, which reads .env itself. Starting npm
+# directly does not: pm2 gives the process its own environment, PORT never
+# arrives, and Next falls back to 3000 — which on a server already running
+# something there fails with EADDRINUSE and restarts forever.
+pm2 start ecosystem.config.js
 pm2 save
 
 say "Making pm2 start on boot"

@@ -53,10 +53,11 @@ say "Restarting"
 # rebooted without a saved process list, and "pm2 restart" simply fails with
 # "Process or Namespace not found" instead of bringing the app up.
 if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
-  pm2 restart "$APP_NAME" --update-env
+  # --update-env re-reads ecosystem.config.js, so a changed .env takes effect.
+  pm2 restart ecosystem.config.js --update-env
 else
   say "pm2 has no '$APP_NAME' process, starting a new one"
-  pm2 start npm --name "$APP_NAME" -- start
+  pm2 start ecosystem.config.js
 fi
 pm2 save >/dev/null 2>&1 || true
 
