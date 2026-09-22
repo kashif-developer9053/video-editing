@@ -10,11 +10,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import fs from "node:fs/promises";
 import path from "node:path";
-
-const require = createRequire(import.meta.url);
 import type { DrawablePage } from "@/engine/types";
 import { createCanvas } from "./canvas";
 
