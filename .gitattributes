@@ -1,0 +1,16 @@
+# Normalise line endings in the repo.
+* text=auto
+
+# These run on Linux. With CRLF the shebang becomes "/usr/bin/env bash\r",
+# which fails as "bad interpreter", so force LF whatever the author's OS does.
+*.sh text eol=lf
+deploy/nginx.conf text eol=lf
+.github/**/*.yml text eol=lf
+
+# Binary: never touch.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.mp4 binary
+*.mp3 binary
