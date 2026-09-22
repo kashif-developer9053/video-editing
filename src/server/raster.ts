@@ -10,8 +10,11 @@
  */
 
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+const require = createRequire(import.meta.url);
 import type { DrawablePage } from "@/engine/types";
 import { createCanvas } from "./canvas";
 
@@ -139,7 +142,37 @@ function cMapFactory(dir: string) {
  */
 let pdfjsPromise: ReturnType<typeof importPdfjs> | null = null;
 
+/**
+ * The canvas factory pdfjs uses for its own scratch surfaces.
+ *
+ * pdfjs does not only draw into the canvas we hand it: for images, masks and
+ * transparency groups it allocates extra canvases of its own. Without a
+ * factory it falls back to the DOM one, which calls
+ * document.createElement("canvas") — under Node that yields nothing usable
+ * and the render dies with "TypeError: Image or Canvas expected" somewhere
+ * inside paintInlineImageXObject. A text-only PDF never allocates a scratch
+ * canvas, which is why this only appears on documents containing images.
+ */
+class NodeCanvasFactory {
+  create(width: number, height: number) {
+    const canvas = createCanvas(Math.max(1, width), Math.max(1, height));
+    return { canvas, context: canvas.getContext("2d") };
+  }
+
+  reset(entry: { canvas: { width: number; height: number } }, width: number, height: number) {
+    entry.canvas.width = Math.max(1, width);
+    entry.canvas.height = Math.max(1, height);
+  }
+
+  destroy(entry: { canvas: { width: number; height: number } }) {
+    // Zeroing frees the backing buffer rather than waiting on GC.
+    entry.canvas.width = 0;
+    entry.canvas.height = 0;
+  }
+}
+
 async function importPdfjs() {
+
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
   // No worker under Node: the main thread does the parsing.
   pdfjs.GlobalWorkerOptions.workerSrc = "";
@@ -186,6 +219,8 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
     // Courier) or a CJK encoding renders with no text at all.
     StandardFontDataFactory: standardFontFactory(dirs.fonts),
     CMapReaderFactory: cMapFactory(dirs.cmaps),
+    // Scratch canvases for images and masks; see NodeCanvasFactory.
+    CanvasFactory: NodeCanvasFactory,
     cMapPacked: true,
     useSystemFonts: false,
     isEvalSupported: false,
@@ -215,7 +250,13 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        // Also needed here: the render task allocates its own scratch
+        // canvases independently of the document.
+        canvasFactory: new NodeCanvasFactory(),
+      } as Parameters<typeof page.render>[0]).promise;
 
       const chars = await countCharacters(page);
       const { contentBottom, coverage } = measureInk(ctx, canvas.width, canvas.height);
