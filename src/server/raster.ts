@@ -18,6 +18,8 @@ import { createCanvas } from "./canvas";
 
 /** Pages to rasterize between handing the event loop back. */
 const YIELD_EVERY = 4;
+/** Below this many pages, the work finishes before progress is worth showing. */
+const YIELD_ABOVE_PAGES = 25;
 
 /** Cap the raster scale so one huge page cannot blow up memory alone. */
 const MAX_SCALE = 3.0;
@@ -312,7 +314,10 @@ export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
       // Every page measured twice as slow overall — the yield costs more
       // than the page does on a simple document. Every few pages keeps the
       // server answering without that penalty.
-      if (pages.length % YIELD_EVERY === 0) {
+      // Only worth paying for on a document long enough that someone is
+      // waiting on the progress line. Below that the yield costs more than
+      // the pages do.
+      if (total >= YIELD_ABOVE_PAGES && pages.length % YIELD_EVERY === 0) {
         await new Promise((resolve) => setImmediate(resolve));
       }
     }

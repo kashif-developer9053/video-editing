@@ -140,7 +140,9 @@ export function Studio() {
           setError(null);
           setStatus("ready");
           setStatusText("Ready");
-          setStatusMeta("");
+          setStatusMeta(
+            source ? `${source.documentPages} ${source.documentPages === 1 ? "page" : "pages"}` : "",
+          );
           return;
         }
         if (!res.ok) {
@@ -160,10 +162,12 @@ export function Studio() {
           new CustomEvent("scrollcast:preview", { detail: URL.createObjectURL(blob) }),
         );
         setError(null);
-        if (track && seq === previewSeq.current) {
+        // Whatever route got us here — cached pages or a fresh rasterize —
+        // a frame is now on screen, so the wait is genuinely over.
+        if (seq === previewSeq.current) {
           setStatus("ready");
           setStatusText("Ready");
-          setStatusMeta("");
+          setStatusMeta(source ? `${source.documentPages} ${source.documentPages === 1 ? "page" : "pages"}` : "");
         }
       } catch (err) {
         if (seq === previewSeq.current) {
@@ -222,8 +226,12 @@ export function Studio() {
         const pages = data.pages;
         setSource({ file, name: file.name, documentPages: pages });
         setPreviewKey(null);
-        setStatus("ready");
-        setStatusText("Ready");
+        // Counting pages is quick; rendering the first frame is not. Saying
+        // "Ready" here left the stage black for another ten seconds while
+        // the preview was still being made, which reads as broken. Stay in
+        // the loading state until a frame actually arrives.
+        setStatus("loading");
+        setStatusText("Getting your pages ready");
         setStatusMeta(`${pages} ${pages === 1 ? "page" : "pages"}`);
       } catch (err) {
         setStatus("error");
@@ -395,7 +403,22 @@ export function Studio() {
             <Rail disabled={rendering} />
           </div>
         ) : (
-          <Landing />
+          <div className="flex flex-col gap-4">
+            {/*
+              Before a file is loaded the action bar is not on screen, so a
+              failure had nowhere to appear and choosing an unreadable PDF
+              looked like nothing happening at all.
+            */}
+            {error ? (
+              <p
+                role="alert"
+                className="rounded-lg border border-rec/30 bg-rec/10 px-4 py-3 text-sm text-rec"
+              >
+                {error}
+              </p>
+            ) : null}
+            <Landing />
+          </div>
         )}
       </main>
 
