@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatTimecode } from "@/engine/layout";
-import { useSetTime, useSettingsValue, useSource, useTime } from "@/store/settings";
+import { useMusic, useSetTime, useSettingsValue, useSource, useTime } from "@/store/settings";
 
 export type StageStatus = "idle" | "loading" | "ready" | "rendering" | "error";
 
@@ -10,17 +10,22 @@ export function Stage({
   status,
   statusText,
   statusMeta,
+  progress,
   onFile,
 }: {
   status: StageStatus;
   statusText: string;
   statusMeta: string;
+  /** How far a render has got, 0..1. Ignored unless status is "rendering". */
+  progress?: number;
   onFile: (file: File) => void;
 }) {
   const settings = useSettingsValue();
   const source = useSource();
+  const music = useMusic();
   const time = useTime();
   const setTime = useSetTime();
+  const audio = useRef<HTMLAudioElement | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -71,6 +76,48 @@ export function Stage({
     return () => clearInterval(id);
   }, [playing, busy, source, settings.duration, setTime]);
 
+  // The chosen song, playable in the browser. The preview itself is a
+  // sequence of stills rendered on the server, so without this "play" showed
+  // the pictures in silence and the music only existed in the final file.
+  const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : null), [music]);
+  useEffect(() => {
+    return () => {
+      if (musicUrl) URL.revokeObjectURL(musicUrl);
+    };
+  }, [musicUrl]);
+
+  // Keep the song in step with the transport: the preview clock is the
+  // scrubber, not the audio element.
+  useEffect(() => {
+    const el = audio.current;
+    if (!el || !musicUrl) return;
+
+    el.volume = Math.max(0, Math.min(1, settings.musicVolume));
+
+    if (!isPlaying) {
+      el.pause();
+      return;
+    }
+
+    // Music starts when the pages do, after any opening card.
+    const cardLead = settings.title ? settings.cardSeconds : 0;
+    const into = time - cardLead;
+    if (into < 0) {
+      el.pause();
+      return;
+    }
+
+    // Loop by hand: the track is usually shorter than the video.
+    const wanted = settings.musicLoop && el.duration > 0 ? into % el.duration : into;
+    if (wanted > (el.duration || Infinity)) {
+      el.pause();
+      return;
+    }
+    // Only correct when it has genuinely drifted, or playback stutters.
+    if (Math.abs(el.currentTime - wanted) > 0.7) el.currentTime = wanted;
+    if (el.paused) void el.play().catch(() => {});
+  }, [isPlaying, time, musicUrl, settings.musicVolume, settings.musicLoop, settings.title, settings.cardSeconds]);
+
   // Each new frame revokes the one it replaces, so blob URLs do not pile up.
   useEffect(() => {
     const handler = (event: Event) => {
@@ -118,6 +165,24 @@ export function Stage({
             alt={`What the video looks like at ${formatTimecode(time)}`}
             className="max-h-full max-w-full rounded-md object-contain shadow-[0_18px_50px_rgba(0,0,0,.6)]"
           />
+        ) : null}
+
+        {status === "rendering" ? (
+          <div className="absolute inset-x-3 bottom-3 flex flex-col gap-2 rounded-lg bg-ground/85 p-3 backdrop-blur">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-sm font-medium text-ink">{statusText}</span>
+              <span className="font-mono text-base font-semibold text-accent tabular-nums">
+                {Math.round((progress ?? 0) * 100)}%
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-rule">
+              <span
+                className="block h-full rounded-full bg-accent transition-[width] duration-300"
+                style={{ width: `${Math.max(2, Math.round((progress ?? 0) * 100))}%` }}
+              />
+            </div>
+            {statusMeta ? <span className="text-xs text-dim">{statusMeta}</span> : null}
+          </div>
         ) : null}
 
         {status === "loading" && !preview ? (
@@ -172,6 +237,9 @@ export function Stage({
           className="sr-only"
           tabIndex={-1}
         />
+
+        {/* Driven by the effect above; never shows its own controls. */}
+        {musicUrl ? <audio ref={audio} src={musicUrl} preload="auto" className="sr-only" /> : null}
       </div>
 
       {source ? (
@@ -204,6 +272,17 @@ export function Stage({
               {formatTimecode(time)} / {formatTimecode(settings.duration)}
             </span>
           </div>
+
+          {music ? (
+            <p className="flex items-center gap-1.5 text-xs text-dim">
+              <svg viewBox="0 0 24 24" aria-hidden className="h-3 w-3 shrink-0 fill-none stroke-current stroke-[1.8]" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+              Press play to hear {music.name} with it
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-dim">
             <span

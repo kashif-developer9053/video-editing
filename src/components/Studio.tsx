@@ -394,6 +394,7 @@ export function Studio() {
             status={status}
             statusText={statusText}
             statusMeta={statusMeta}
+            progress={progress}
             onFile={onFile}
           />
         </div>
@@ -459,16 +460,30 @@ export function Studio() {
             ) : (
               <>
                 {rendering ? (
-                  <div className="flex flex-col gap-1.5">
-                    <div className="h-1.5 overflow-hidden rounded-full bg-rule">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium text-ink">
+                        {/*
+                          The server's own words while it works, so the line
+                          says what is happening rather than sitting at 0%
+                          with nothing to explain the wait.
+                        */}
+                        {statusText}
+                      </span>
+                      <span className="font-mono text-base font-semibold text-accent tabular-nums">
+                        {Math.round(progress * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-rule">
                       <span
-                        className="block h-full bg-accent transition-[width] duration-200"
-                        style={{ width: `${Math.round(progress * 100)}%` }}
+                        className="block h-full rounded-full bg-accent transition-[width] duration-300"
+                        style={{ width: `${Math.max(2, Math.round(progress * 100))}%` }}
                       />
                     </div>
                     <p className="text-center text-xs text-dim">
-                      {Math.round(progress * 100)}% done
-                      {job?.etaSeconds != null ? ` · about ${formatShort(job.etaSeconds)} left` : ""}
+                      {job?.etaSeconds != null && job.etaSeconds > 0
+                        ? `about ${formatShort(job.etaSeconds)} left`
+                        : "working out how long this will take"}
                     </p>
                   </div>
                 ) : stats ? (
