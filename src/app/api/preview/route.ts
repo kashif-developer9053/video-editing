@@ -34,20 +34,20 @@ interface CacheEntry {
    * otherwise the preview would draw a bitmap sized for different settings
    * and drift from the finished video.
    */
-  shape: string;
+  shape: number;
   touchedAt: number;
 }
 
-/** The settings that decide how a page bitmap is sized. */
-function shapeOf(settings: Settings): string {
-  return [
-    Math.round(drawnPageWidth(settings)),
-    settings.mode,
-    settings.fit,
-    settings.platform,
-    settings.quality,
-    settings.margin,
-  ].join(":");
+/**
+ * The width the cached pages were rasterized for.
+ *
+ * Only the drawn width matters. Keying on quality, platform, margin and mode
+ * as well meant nudging the margin slider — or switching to a quality that
+ * happens to want the same width — threw the pages away and re-read the
+ * whole document.
+ */
+function shapeOf(settings: Settings): number {
+  return Math.round(drawnPageWidth(settings));
 }
 
 // One document at a time is all the editor ever previews; holding more would
@@ -86,8 +86,10 @@ export async function POST(request: Request) {
     key = hashOf(bytes, settings.pageFrom, settings.pageTo);
     entry = cache.get(key);
 
-    // Re-rasterize whenever the page bitmaps would be sized differently.
-    if (!entry || entry.shape !== shapeOf(settings)) {
+    // Re-rasterize only when the cached pages are too small for what is
+    // being asked for. Bitmaps larger than needed scale down fine, so a
+    // lower quality reuses what is already there rather than starting over.
+    if (!entry || entry.shape < shapeOf(settings)) {
       if (entry) releasePages(entry.pages);
 
       // The client polls /api/preview/progress with this same key while the
@@ -126,9 +128,9 @@ export async function POST(request: Request) {
   } else if (typeof providedKey === "string") {
     key = providedKey;
     entry = cache.get(key);
-    if (!entry || entry.shape !== shapeOf(settings)) {
-      // The client should re-send the file: either the cache expired, or a
-      // setting changed that needs the pages prepared differently.
+    if (!entry || entry.shape < shapeOf(settings)) {
+      // The client should re-send the file: either the cache expired, or the
+      // pages it holds are too small for the new settings.
       return NextResponse.json({ error: "stale-key" }, { status: 409 });
     }
   } else {

@@ -56,6 +56,18 @@ export function Studio() {
   const previewSeq = useRef(0);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const readStats = useCallback(
+    (res: Response) => {
+      setStats({
+        frames: Number(res.headers.get("X-Scrollcast-Frames") ?? 0),
+        uniqueFrames: Number(res.headers.get("X-Scrollcast-Unique") ?? 0),
+        predictedSeconds: Number(res.headers.get("X-Scrollcast-Estimate") ?? 0),
+        encoder: res.headers.get("X-Scrollcast-Encoder") ?? "",
+      });
+    },
+    [setStats],
+  );
+
   const requestPreview = useCallback(() => {
     if (!source) return;
     if (previewTimer.current) clearTimeout(previewTimer.current);
@@ -101,9 +113,34 @@ export function Studio() {
         const res = await fetch("/api/preview", { method: "POST", body: form });
 
         if (res.status === 409) {
-          // The server's cached pages are gone or were prepared for other
-          // settings; clearing the key makes the next attempt send the file.
+          // The server's cached pages are gone, or are too small for these
+          // settings. Send the file straight away rather than only clearing
+          // the key: waiting for the effect to fire again leaves the stage
+          // showing nothing in between.
           setPreviewKey(null);
+          if (seq !== previewSeq.current) return;
+
+          const retry = new FormData();
+          retry.set("settings", JSON.stringify(settings));
+          retry.set("time", String(time));
+          retry.set("pdf", source.file);
+          if (track) retry.set("track", track);
+
+          const again = await fetch("/api/preview", { method: "POST", body: retry });
+          if (!again.ok || seq !== previewSeq.current) return;
+
+          const retryKey = again.headers.get("X-Scrollcast-Key");
+          if (retryKey) setPreviewKey(retryKey);
+          readStats(again);
+
+          const retryBlob = await again.blob();
+          window.dispatchEvent(
+            new CustomEvent("scrollcast:preview", { detail: URL.createObjectURL(retryBlob) }),
+          );
+          setError(null);
+          setStatus("ready");
+          setStatusText("Ready");
+          setStatusMeta("");
           return;
         }
         if (!res.ok) {
@@ -116,12 +153,7 @@ export function Studio() {
         const key = res.headers.get("X-Scrollcast-Key");
         if (key) setPreviewKey(key);
 
-        setStats({
-          frames: Number(res.headers.get("X-Scrollcast-Frames") ?? 0),
-          uniqueFrames: Number(res.headers.get("X-Scrollcast-Unique") ?? 0),
-          predictedSeconds: Number(res.headers.get("X-Scrollcast-Estimate") ?? 0),
-          encoder: res.headers.get("X-Scrollcast-Encoder") ?? "",
-        });
+        readStats(res);
 
         const blob = await res.blob();
         window.dispatchEvent(
@@ -143,7 +175,7 @@ export function Studio() {
     };
 
     previewTimer.current = setTimeout(run, 220);
-  }, [settings, time, source, previewKey, setPreviewKey, setStats]);
+  }, [settings, time, source, previewKey, setPreviewKey, readStats]);
 
   useEffect(() => {
     if (source && status !== "rendering") requestPreview();
