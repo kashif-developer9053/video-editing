@@ -169,42 +169,25 @@ export function Studio() {
 
       const unreadable = "Could not read that PDF. It may be damaged or password protected.";
 
-      // One probe render tells us the page count and warms the server cache.
-      // A tracking id goes with it so the poll below can report how far
-      // through the document the server is — on a hundred pages this is the
-      // difference between a progress line and a blank screen.
-      const track = `open-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Ask only for the page count. This used to be a full preview request
+      // with pageTo:1, which meant uploading the whole document twice — once
+      // to learn how many pages it had, then again for the real preview. On
+      // a phone the upload is the slow part.
       const form = new FormData();
       form.set("pdf", file);
-      form.set("settings", JSON.stringify({ ...settings, pageFrom: 1, pageTo: 1 }));
-      form.set("time", "0");
-      form.set("track", track);
-
-      let polling = true;
-      const poll = async () => {
-        while (polling) {
-          await new Promise((r) => setTimeout(r, 400));
-          if (!polling) break;
-          try {
-            const res = await fetch(`/api/preview/progress?key=${encodeURIComponent(track)}`);
-            if (!res.ok) continue;
-            const p = (await res.json()) as { done: number; total: number; finished: boolean };
-            if (!polling || p.finished) break;
-            if (p.total > 1) setStatusMeta(`reading page ${p.done} of ${p.total}`);
-          } catch {
-            // A failed poll is not worth surfacing; the real request still runs.
-          }
-        }
-      };
-      void poll();
 
       try {
-        const res = await fetch("/api/preview", { method: "POST", body: form });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: unreadable }));
-          throw new Error(body.error ?? unreadable);
+        const res = await fetch("/api/pages", { method: "POST", body: form });
+        const text = await res.text();
+        let data: { pages?: number; error?: string } = {};
+        try {
+          data = JSON.parse(text) as { pages?: number; error?: string };
+        } catch {
+          throw new Error(unreadable);
         }
-        const pages = Number(res.headers.get("X-Scrollcast-Pages") ?? 1);
+        if (!res.ok || !data.pages) throw new Error(data.error ?? unreadable);
+
+        const pages = data.pages;
         setSource({ file, name: file.name, documentPages: pages });
         setPreviewKey(null);
         setStatus("ready");
@@ -215,22 +198,40 @@ export function Studio() {
         setStatusText("Could not open that file");
         setStatusMeta("");
         setError(err instanceof Error ? err.message : unreadable);
-      } finally {
-        polling = false;
       }
     },
-    [settings, setSource, setPreviewKey],
+    [setSource, setPreviewKey],
   );
 
   /* ---------------- rendering ---------------- */
 
   const poll = useCallback((id: string) => {
     const lost = "Lost track of the video. Please try again.";
+    // A render runs for minutes, and on a phone a poll or two will fail:
+    // the radio drops, the tab is backgrounded, the connection stalls. One
+    // failure used to end the loop and report the video lost, which is why
+    // progress could jump from 0% straight to an error. Give up only after
+    // several consecutive failures.
+    let consecutiveFailures = 0;
+    const MAX_FAILURES = 8;
+
     const tick = async () => {
       try {
-        const res = await fetch(`/api/render/${id}`);
+        const res = await fetch(`/api/render/${id}`, { cache: "no-store" });
         if (!res.ok) throw new Error(lost);
-        const data = (await res.json()) as JobProgress & { result: Finished | null };
+
+        // Parse defensively: a proxy in front of the app can answer with an
+        // HTML error page, and res.json() on that throws "Unexpected end of
+        // JSON input" — an error about our own parsing, not about the video.
+        const text = await res.text();
+        let data: (JobProgress & { result: Finished | null }) | null = null;
+        try {
+          data = JSON.parse(text) as JobProgress & { result: Finished | null };
+        } catch {
+          throw new Error(lost);
+        }
+
+        consecutiveFailures = 0;
         setJob(data);
 
         if (data.status === "done" && data.result) {
@@ -254,8 +255,15 @@ export function Studio() {
         setStatusMeta(
           data.etaSeconds !== null ? `about ${formatShort(data.etaSeconds)} left` : "",
         );
-        setTimeout(tick, 500);
+        setTimeout(tick, 1000);
       } catch (err) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures < MAX_FAILURES) {
+          // Back off a little rather than hammering a connection that is
+          // already struggling.
+          setTimeout(tick, Math.min(5000, 1000 * consecutiveFailures));
+          return;
+        }
         setStatus("error");
         setError(err instanceof Error ? err.message : lost);
         jobId.current = null;
@@ -281,8 +289,20 @@ export function Studio() {
 
     try {
       const res = await fetch("/api/render", { method: "POST", body: form });
-      const data = await res.json();
+      // Same defensive parse: a 502 from a proxy is HTML, not JSON.
+      const text = await res.text();
+      let data: { id?: string; error?: string } = {};
+      try {
+        data = JSON.parse(text) as { id?: string; error?: string };
+      } catch {
+        throw new Error(
+          res.ok
+            ? "The server gave an unexpected reply. Please try again."
+            : "The server is busy or unreachable. Please try again in a moment.",
+        );
+      }
       if (!res.ok) throw new Error(data.error ?? "Could not start making the video.");
+      if (!data.id) throw new Error("The server did not start the video. Please try again.");
       jobId.current = data.id;
       poll(data.id);
     } catch (err) {

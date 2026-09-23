@@ -209,6 +209,34 @@ export async function warmUp(): Promise<void> {
   }
 }
 
+/**
+ * How many pages a PDF has, without rendering any of them.
+ *
+ * Opening a document used to upload it twice: once to a probe request that
+ * rasterized page one purely to learn the page count, then again for the
+ * real preview. On a phone the upload is the slow part, so the probe now
+ * only parses the document structure.
+ */
+export async function countPages(data: Uint8Array): Promise<number> {
+  const pdfjs = await loadPdfjs();
+  const dirs = assetDirs();
+
+  const doc = await pdfjs.getDocument({
+    data,
+    StandardFontDataFactory: standardFontFactory(dirs.fonts),
+    CMapReaderFactory: cMapFactory(dirs.cmaps),
+    cMapPacked: true,
+    useSystemFonts: false,
+    isEvalSupported: false,
+  } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+
+  try {
+    return doc.numPages;
+  } finally {
+    await doc.destroy();
+  }
+}
+
 export async function rasterizePdf(opts: RasterOptions): Promise<RasterResult> {
   const pdfjs = await loadPdfjs();
   const dirs = assetDirs();
