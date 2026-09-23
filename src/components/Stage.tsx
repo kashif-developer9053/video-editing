@@ -62,7 +62,10 @@ export function Stage({
   // the final motion.
   useEffect(() => {
     if (!playing || busy || !source) return;
-    const STEP_MS = 400;
+    // Each step is a server-rendered frame, so this is deliberately coarse:
+    // it shows the pacing, not smooth motion. Anything faster turns playback
+    // into a request per tick.
+    const STEP_MS = 1000;
     const id = setInterval(() => {
       setTime((current) => {
         const next = current + STEP_MS / 1000;

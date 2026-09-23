@@ -68,8 +68,12 @@ export function Studio() {
     [setStats],
   );
 
-  const requestPreview = useCallback(() => {
-    if (!source) return;
+  const requestPreview = useCallback(
+    (onSettled?: () => void) => {
+    if (!source) {
+      onSettled?.();
+      return;
+    }
     if (previewTimer.current) clearTimeout(previewTimer.current);
 
     const run = async () => {
@@ -175,14 +179,34 @@ export function Studio() {
         }
       } finally {
         polling = false;
+        onSettled?.();
       }
     };
 
     previewTimer.current = setTimeout(run, 220);
-  }, [settings, time, source, previewKey, setPreviewKey, readStats]);
+    },
+    [settings, time, source, previewKey, setPreviewKey, readStats],
+  );
+
+  // One preview in flight at a time.
+  //
+  // requestPreview is rebuilt whenever settings or the scrub position
+  // change, and the effect below re-runs with it. While the preview is
+  // playing the position changes several times a second, so this fired a
+  // fresh request on every tick — each one uploading the whole PDF again.
+  // The server saw dozens at once and the proxy in front of it started
+  // answering 502.
+  const inFlight = useRef(false);
 
   useEffect(() => {
-    if (source && status !== "rendering") requestPreview();
+    if (!source || status === "rendering") return;
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+    requestPreview(() => {
+      inFlight.current = false;
+    });
+
     return () => {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
